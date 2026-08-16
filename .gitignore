@@ -1,0 +1,16 @@
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+/Craft/build
+/Craft/.cxx
+/Craft/local.properties
+*.apk
+*.aab
+*.log
+Craft_Log/

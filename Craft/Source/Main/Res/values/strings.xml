@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Omni Craft</string>
+    <string name="app_version">1.0.0</string>
+    <string name="engine_name">Omni Craft AAA Engine</string>
+    <string name="btn_break">KIR</string>
+    <string name="btn_place">KOY</string>
+    <string name="btn_jump">ZIPLA</string>
+    <string name="btn_sprint">KOŞ</string>
+    <string name="btn_sneak">EĞİL</string>
+    <string name="btn_fly_up">UÇ ▲</string>
+    <string name="btn_fly_down">UÇ ▼</string>
+    <string name="btn_craft">ÜRET</string>
+    <string name="btn_chat">SOHBET</string>
+</resources>

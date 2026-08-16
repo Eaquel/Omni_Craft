@@ -1,0 +1,86 @@
+name: Omni Craft Release Build
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GRADLE_OPTS: -Dorg.gradle.daemon=false -Dorg.gradle.caching=true
+  NDK_VERSION: 29.0.14206865
+  CMAKE_VERSION: 4.4.2
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 25
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK API 36 & NDK 29
+        shell: bash
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager --install \
+            "platform-tools" \
+            "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;${NDK_VERSION}"
+
+      - name: Setup CMake 4.4.2
+        shell: bash
+        run: |
+          CMAKE_DIR="$RUNNER_TEMP/cmake-${CMAKE_VERSION}"
+          curl -L \
+            --fail \
+            --retry 5 \
+            --retry-delay 2 \
+            -o "$RUNNER_TEMP/cmake.tar.gz" \
+            "https://github.com/Kitware/CMake/releases/download/v${CMAKE_VERSION}/cmake-${CMAKE_VERSION}-linux-x86_64.tar.gz"
+
+          mkdir -p "$CMAKE_DIR"
+          tar -xzf "$RUNNER_TEMP/cmake.tar.gz" --strip-components=1 -C "$CMAKE_DIR"
+          echo "$CMAKE_DIR/bin" >> "$GITHUB_PATH"
+          "$CMAKE_DIR/bin/cmake" --version
+
+      - name: Ensure Wrapper Executable
+        shell: bash
+        run: |
+          if [ -d "Gradle" ] && [ ! -d "gradle/wrapper" ]; then
+            mkdir -p gradle/wrapper
+            cp -r Gradle/* gradle/wrapper/ 2>/dev/null || true
+          fi
+          if [ ! -f "gradlew" ]; then
+            curl -sLo gradlew https://raw.githubusercontent.com/gradle/gradle/v9.7.0/gradlew
+          fi
+          chmod +x gradlew
+
+      - name: Build Optimized Release APK
+        shell: bash
+        run: |
+          ./gradlew :Client:assembleRelease --stacktrace --no-daemon
+
+      - name: Upload Release APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eaquel_Client-release
+          path: Client/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
