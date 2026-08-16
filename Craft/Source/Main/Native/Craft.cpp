@@ -17,7 +17,7 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     if (fd >= 0) {
         char buf[512];
         snprintf(buf, sizeof(buf),
-                 "=== OMNI CRAFT CRASH RAPORU ===\n"
+                 "=== OMNI CRAFT AAA PROCEDURAL CRASH ===\n"
                  "Sinyal: %d\n"
                  "Hata Adresi: %p\n"
                  "Zaman: %04d-%02d-%02d %02d:%02d:%02d\n",
@@ -31,62 +31,62 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     _exit(1);
 }
 
+// Narrowing hatasını tamamen engelleyen net struct başlatıcı dizisi
 static constexpr BlockDef BLOCK_TABLE[BLOCK_COUNT] = {
-    {"hava",        false,true, false,false, 0.0f, 0, 0, 0,  0,0, 0.6f, AIR},
-    {"cimen",       true, false,false,false, 0.6f, 1, 2, 3,  0,0, 0.6f, DIRT},
-    {"toprak",      true, false,false,false, 0.5f, 3, 3, 3,  0,0, 0.6f, DIRT},
-    {"tas",         true, false,false,false, 1.5f, 4, 4, 4,  0,0, 0.6f, COBBLESTONE},
-    {"kiriktas",    true, false,false,false, 2.0f, 5, 5, 5,  0,0, 0.6f, COBBLESTONE},
-    {"kum",         true, false,false,true,  0.5f, 6, 6, 6,  0,0, 0.4f, SAND},
-    {"cakil",       true, false,false,true,  0.6f, 7, 7, 7,  0,0, 0.4f, GRAVEL},
-    {"mese_kutuk",  true, false,false,false, 2.0f, 8, 9, 8,  0,0, 0.6f, OAK_LOG},
-    {"mese_yaprak", true, true, false,false, 0.2f, 10,10,10, 0,1, 0.6f, AIR},
-    {"mese_tahta",  true, false,false,false, 2.0f, 11,11,11, 0,0, 0.6f, OAK_PLANKS},
-    {"ny_kutuk",    true, false,false,false, 2.0f, 12,13,12, 0,0, 0.6f, BIRCH_LOG},
-    {"ny_tahta",    true, false,false,false, 2.0f, 14,14,14, 0,0, 0.6f, BIRCH_PLANKS},
-    {"ny_yaprak",   true, true, false,false, 0.2f, 15,15,15, 0,1, 0.6f, AIR},
-    {"cam_kutuk",   true, false,false,false, 2.0f, 16,17,16, 0,0, 0.6f, SPRUCE_LOG},
-    {"cam_tahta",   true, false,false,false, 2.0f, 18,18,18, 0,0, 0.6f, SPRUCE_PLANKS},
-    {"cam_yaprak",  true, true, false,false, 0.2f, 19,19,19, 0,1, 0.6f, AIR},
-    {"komur_cevh",  true, false,false,false, 3.0f, 20,20,20, 0,0, 0.6f, ITEM_COAL},
-    {"demir_cevh",  true, false,false,false, 3.0f, 21,21,21, 0,0, 0.6f, IRON_ORE},
-    {"altin_cevh",  true, false,false,false, 3.0f, 22,22,22, 0,0, 0.6f, GOLD_ORE},
-    {"elmas_cevh",  true, false,false,false, 3.0f, 23,23,23, 0,0, 0.6f, ITEM_DIAMOND},
-    {"zumrut_cevh", true, false,false,false, 3.0f, 24,24,24, 0,0, 0.6f, EMERALD_ORE},
-    {"kiziltas_cv", true, false,false,false, 3.0f, 25,25,25, 0,0, 0.6f, REDSTONE_ORE},
-    {"lapis_cevh",  true, false,false,false, 3.0f, 26,26,26, 0,0, 0.6f, LAPIS_ORE},
-    {"komur_blok",  true, false,false,false, 5.0f, 27,27,27, 0,0, 0.6f, COAL_BLOCK},
-    {"demir_blok",  true, false,false,false, 5.0f, 10.0f,28, 0,0, 0.6f, IRON_BLOCK},
-    {"altin_blok",  true, false,false,false, 3.0f, 10.0f,29, 0,0, 0.6f, GOLD_BLOCK},
-    {"elmas_blok",  true, false,false,false, 5.0f, 10.0f,30, 0,0, 0.6f, DIAMOND_BLOCK},
-    {"su",          false,true, true, false,100.f, 31,31,31, 0,2, 0.2f, AIR},
-    {"lav",         false,true, true, false,100.f, 32,32,32, 15,2, 0.2f, AIR},
-    {"cam",         true, true, false,false, 0.3f, 33,33,33, 0,0, 0.6f, AIR},
-    {"isiktasi",    true, true, false,false, 0.3f, 34,34,34, 15,0, 0.6f, GLOWSTONE},
-    {"nether_tasi", true, false,false,false, 0.4f, 35,35,35, 0,0, 0.6f, NETHERRACK},
-    {"uretim_masa", true, false,false,false, 2.5f, 36,37,11, 0,0, 0.6f, CRAFTING_TABLE},
-    {"firin",       true, false,false,false, 3.5f, 38,39,38, 0,0, 0.6f, FURNACE},
-    {"sandik",      true, false,false,false, 2.5f, 40,40,40, 0,0, 0.6f, CHEST},
-    {"merdiven",    false,true, false,false, 0.4f, 41,41,41, 0,0, 0.6f, LADDER},
-    {"mesale",      false,true, false,false, 0.0f, 42,42,42, 14,0, 0.6f, TORCH},
-    {"bedrock",     true, false,false,false, -1.f, 43,43,43, 0,0, 0.6f, BEDROCK},
-    {"kar_katmani", true, false,false,false, 0.2f, 44,44,44, 0,0, 0.3f, SNOW_LAYER},
-    {"buz",         true, true, false,false, 0.5f, 45,45,45, 0,1, 0.02f,AIR},
-    {"kil",         true, false,false,false, 0.6f, 46,46,46, 0,0, 0.6f, CLAY},
-    {"tugla",       true, false,false,false, 2.0f, 47,47,47, 0,0, 0.6f, BRICK},
-    {"tas_tugla",   true, false,false,false, 1.5f, 48,48,48, 0,0, 0.6f, STONE_BRICKS},
-    {"yosun_tas",   true, false,false,false, 2.0f, 49,49,49, 0,0, 0.6f, MOSSY_COBBLE},
-    {"tnt",         true, false,false,false, 0.0f, 50,51,50, 0,0, 0.6f, TNT},
-    {"kitaplik",    true, false,false,false, 1.5f, 11,52,11, 0,0, 0.6f, OAK_PLANKS},
-    {"balkabagi",   true, false,false,false, 1.0f, 53,54,53, 0,0, 0.6f, PUMPKIN},
-    {"karpuz",      true, false,false,false, 1.0f, 55,56,55, 0,0, 0.6f, MELON},
-    {"kumtasi",     true, false,false,false, 0.8f, 57,58,59, 0,0, 0.6f, SANDSTONE},
-    {"kaktus",      true, true, false,false, 0.4f, 60,61,62, 0,1, 0.6f, CACTUS},
-    {"sunger",      true, false,false,false, 0.6f, 63,63,63, 0,0, 0.6f, SPONGE}
+    {"hava",           false, true,  false, false, 0.0f, 0.6f, AIR},
+    {"cimen",          true,  false, false, false, 0.6f, 0.6f, DIRT},
+    {"toprak",         true,  false, false, false, 0.5f, 0.6f, DIRT},
+    {"tas",            true,  false, false, false, 1.5f, 0.6f, COBBLESTONE},
+    {"kiriktas",       true,  false, false, false, 2.0f, 0.6f, COBBLESTONE},
+    {"kum",            true,  false, false, true,  0.5f, 0.4f, SAND},
+    {"cakil",          true,  false, false, true,  0.6f, 0.4f, GRAVEL},
+    {"mese_kutuk",     true,  false, false, false, 2.0f, 0.6f, OAK_LOG},
+    {"mese_yaprak",    true,  true,  false, false, 0.2f, 0.6f, AIR},
+    {"mese_tahta",     true,  false, false, false, 2.0f, 0.6f, OAK_PLANKS},
+    {"ny_kutuk",       true,  false, false, false, 2.0f, 0.6f, BIRCH_LOG},
+    {"ny_tahta",       true,  false, false, false, 2.0f, 0.6f, BIRCH_PLANKS},
+    {"ny_yaprak",      true,  true,  false, false, 0.2f, 0.6f, AIR},
+    {"cam_kutuk",      true,  false, false, false, 2.0f, 0.6f, SPRUCE_LOG},
+    {"cam_tahta",      true,  false, false, false, 2.0f, 0.6f, SPRUCE_PLANKS},
+    {"cam_yaprak",     true,  true,  false, false, 0.2f, 0.6f, AIR},
+    {"komur_cevh",     true,  false, false, false, 3.0f, 0.6f, ITEM_COAL},
+    {"demir_cevh",     true,  false, false, false, 3.0f, 0.6f, IRON_ORE},
+    {"altin_cevh",     true,  false, false, false, 3.0f, 0.6f, GOLD_ORE},
+    {"elmas_cevh",     true,  false, false, false, 3.0f, 0.6f, ITEM_DIAMOND},
+    {"zumrut_cevh",    true,  false, false, false, 3.0f, 0.6f, EMERALD_ORE},
+    {"kiziltas_cv",    true,  false, false, false, 3.0f, 0.6f, REDSTONE_ORE},
+    {"lapis_cevh",     true,  false, false, false, 3.0f, 0.6f, LAPIS_ORE},
+    {"komur_blok",     true,  false, false, false, 5.0f, 0.6f, COAL_BLOCK},
+    {"demir_blok",     true,  false, false, false, 5.0f, 0.6f, IRON_BLOCK},
+    {"altin_blok",     true,  false, false, false, 3.0f, 0.6f, GOLD_BLOCK},
+    {"elmas_blok",     true,  false, false, false, 5.0f, 0.6f, DIAMOND_BLOCK},
+    {"su",             false, true,  true,  false, 100.f,0.2f, AIR},
+    {"lav",            false, true,  true,  false, 100.f,0.2f, AIR},
+    {"cam",            true,  true,  false, false, 0.3f, 0.6f, AIR},
+    {"isiktasi",       true,  true,  false, false, 0.3f, 0.6f, GLOWSTONE},
+    {"nether_tasi",    true,  false, false, false, 0.4f, 0.6f, NETHERRACK},
+    {"uretim_masa",    true,  false, false, false, 2.5f, 0.6f, CRAFTING_TABLE},
+    {"firin",          true,  false, false, false, 3.5f, 0.6f, FURNACE},
+    {"sandik",         true,  false, false, false, 2.5f, 0.6f, CHEST},
+    {"merdiven",       false, true,  false, false, 0.4f, 0.6f, LADDER},
+    {"mesale",         false, true,  false, false, 0.0f, 0.6f, TORCH},
+    {"bedrock",        true,  false, false, false, -1.f, 0.6f, BEDROCK},
+    {"kar_katmani",    true,  false, false, false, 0.2f, 0.3f, SNOW_LAYER},
+    {"buz",            true,  true,  false, false, 0.5f, 0.02f,AIR},
+    {"kil",            true,  false, false, false, 0.6f, 0.6f, CLAY},
+    {"tugla",          true,  false, false, false, 2.0f, 0.6f, BRICK},
+    {"tas_tugla",      true,  false, false, false, 1.5f, 0.6f, STONE_BRICKS},
+    {"yosun_tas",      true,  false, false, false, 2.0f, 0.6f, MOSSY_COBBLE},
+    {"tnt",            true,  false, false, false, 0.0f, 0.6f, TNT},
+    {"kitaplik",       true,  false, false, false, 1.5f, 0.6f, OAK_PLANKS},
+    {"balkabagi",      true,  false, false, false, 1.0f, 0.6f, PUMPKIN},
+    {"karpuz",         true,  false, false, false, 1.0f, 0.6f, MELON},
+    {"kumtasi",        true,  false, false, false, 0.8f, 0.6f, SANDSTONE},
+    {"kaktus",         true,  true,  false, false, 0.4f, 0.6f, CACTUS},
+    {"sunger",         true,  false, false, false, 0.6f, 0.6f, SPONGE}
 };
 
 static inline const BlockDef& BD(uint8_t id) { return BLOCK_TABLE[id < BLOCK_COUNT ? id : 0]; }
-
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static inline int flr(float f) { return static_cast<int>(std::floor(f)); }
 
@@ -139,7 +139,6 @@ uint8_t Chunk::get(int x, int y, int z) const {
 void Chunk::set(int x, int y, int z, uint8_t b) {
     if (x < 0 || x >= CS || y < 0 || y >= WH || z < 0 || z >= CS) return;
     blocks[idx(x, y, z)] = b;
-    meshDirty = true;
 }
 
 std::shared_ptr<Chunk> World::getChunk(int cx, int cz) const {
@@ -237,13 +236,12 @@ void World::updateEntities(float dt) {
                 e.pos.y = flr(e.pos.y) + 1.1f;
             }
         } else {
-            // Mob AI: Basit gezinme ve yerçekimi
             e.pos.y += GRAVITY * dt * 0.3f;
             uint8_t bBelow = blockAt(flr(e.pos.x), flr(e.pos.y - 0.2f), flr(e.pos.z));
             if (bBelow != AIR) e.pos.y = flr(e.pos.y) + 1.0f;
 
             if (fmodf(e.animTime, 3.0f) < dt) {
-                e.yaw = (rand() % 360);
+                e.yaw = static_cast<float>(rand() % 360);
             }
             float rad = e.yaw * 0.01745329f;
             e.pos.x += sinf(rad) * 0.8f * dt;
@@ -295,7 +293,7 @@ void World::saveWorld(const std::string& path) {
         write(fd, ch->blocks.data(), ch->blocks.size());
     }
     close(fd);
-    LOGI("Dünya kaydedildi: %s (%u chunk)", file.c_str(), chunkCount);
+    LOGI("Dünya diske yazıldı: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
 void World::loadWorld(const std::string& path) {
@@ -316,34 +314,63 @@ void World::loadWorld(const std::string& path) {
         chunks[key(cx, cz)] = ch;
     }
     close(fd);
-    LOGI("Dünya yüklendi: %s (%u chunk)", file.c_str(), chunkCount);
+    LOGI("Dünya diskten yüklendi: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
-static const float CUBE_VERTICES[] = {
-    -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,  0.5f, 0.5f,-0.5f,
-     0.5f, 0.5f,-0.5f, -0.5f, 0.5f,-0.5f, -0.5f,-0.5f,-0.5f,
-    -0.5f,-0.5f, 0.5f,  0.5f,-0.5f, 0.5f,  0.5f, 0.5f, 0.5f,
-     0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f,-0.5f, 0.5f,
-    -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,-0.5f, -0.5f,-0.5f,-0.5f,
-    -0.5f,-0.5f,-0.5f, -0.5f,-0.5f, 0.5f, -0.5f, 0.5f, 0.5f,
-     0.5f, 0.5f, 0.5f,  0.5f, 0.5f,-0.5f,  0.5f,-0.5f,-0.5f,
-     0.5f,-0.5f,-0.5f,  0.5f,-0.5f, 0.5f,  0.5f, 0.5f, 0.5f,
-    -0.5f,-0.5f,-0.5f,  0.5f,-0.5f,-0.5f,  0.5f,-0.5f, 0.5f,
-     0.5f,-0.5f, 0.5f, -0.5f,-0.5f, 0.5f, -0.5f,-0.5f,-0.5f,
-    -0.5f, 0.5f,-0.5f,  0.5f, 0.5f,-0.5f,  0.5f, 0.5f, 0.5f,
-     0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f,-0.5f,
+static const float PROCEDURAL_CUBE[] = {
+    -0.5f,-0.5f,-0.5f, 0,0,-1,  0.5f,-0.5f,-0.5f, 0,0,-1,  0.5f, 0.5f,-0.5f, 0,0,-1,
+     0.5f, 0.5f,-0.5f, 0,0,-1, -0.5f, 0.5f,-0.5f, 0,0,-1, -0.5f,-0.5f,-0.5f, 0,0,-1,
+    -0.5f,-0.5f, 0.5f, 0,0, 1,  0.5f,-0.5f, 0.5f, 0,0, 1,  0.5f, 0.5f, 0.5f, 0,0, 1,
+     0.5f, 0.5f, 0.5f, 0,0, 1, -0.5f, 0.5f, 0.5f, 0,0, 1, -0.5f,-0.5f, 0.5f, 0,0, 1,
+    -0.5f, 0.5f, 0.5f,-1,0, 0, -0.5f, 0.5f,-0.5f,-1,0, 0, -0.5f,-0.5f,-0.5f,-1,0, 0,
+    -0.5f,-0.5f,-0.5f,-1,0, 0, -0.5f,-0.5f, 0.5f,-1,0, 0, -0.5f, 0.5f, 0.5f,-1,0, 0,
+     0.5f, 0.5f, 0.5f, 1,0, 0,  0.5f, 0.5f,-0.5f, 1,0, 0,  0.5f,-0.5f,-0.5f, 1,0, 0,
+     0.5f,-0.5f,-0.5f, 1,0, 0,  0.5f,-0.5f, 0.5f, 1,0, 0,  0.5f, 0.5f, 0.5f, 1,0, 0,
+    -0.5f,-0.5f,-0.5f, 0,-1,0,  0.5f,-0.5f,-0.5f, 0,-1,0,  0.5f,-0.5f, 0.5f, 0,-1,0,
+     0.5f,-0.5f, 0.5f, 0,-1,0, -0.5f,-0.5f, 0.5f, 0,-1,0, -0.5f,-0.5f,-0.5f, 0,-1,0,
+    -0.5f, 0.5f,-0.5f, 0, 1,0,  0.5f, 0.5f,-0.5f, 0, 1,0,  0.5f, 0.5f, 0.5f, 0, 1,0,
+     0.5f, 0.5f, 0.5f, 0, 1,0, -0.5f, 0.5f, 0.5f, 0, 1,0, -0.5f, 0.5f,-0.5f, 0, 1,0,
 };
 
-static const char* VS_ENT = R"(#version 300 es
+// Tamamen matematikle (Procedural Noise ve Işıklandırma) resimsiz blok dokuları üreten Shader
+static const char* VS_PROC = R"(#version 300 es
 layout(location=0) in vec3 aPos;
+layout(location=1) in vec3 aNorm;
 uniform mat4 uMVP;
-void main(){ gl_Position = uMVP * vec4(aPos, 1.0); })";
+uniform vec3 uWorldPos;
+out vec3 vWorldPos;
+out vec3 vNorm;
+void main(){
+    vWorldPos = uWorldPos + aPos;
+    vNorm = aNorm;
+    gl_Position = uMVP * vec4(aPos, 1.0);
+})";
 
-static const char* FS_ENT = R"(#version 300 es
-precision mediump float;
-uniform vec3 uColor;
+static const char* FS_PROC = R"(#version 300 es
+precision highp float;
+in vec3 vWorldPos;
+in vec3 vNorm;
+uniform vec3 uBaseColor;
+uniform int uBlockType;
 out vec4 FragColor;
-void main(){ FragColor = vec4(uColor, 1.0); })";
+
+float hash(vec3 p) {
+    p = fract(p * 0.3183099 + 0.1);
+    p *= 17.0;
+    return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+
+void main(){
+    float n = hash(floor(vWorldPos * 16.0)) * 0.15;
+    vec3 col = uBaseColor + vec3(n - 0.075);
+
+    // Yönsel Gölgelendirme (Directional Diffuse Lighting)
+    float light = max(dot(vNorm, normalize(vec3(0.4, 0.8, 0.3))), 0.0) * 0.4 + 0.6;
+    if(vNorm.y < -0.5) light *= 0.5; // Alt yüzey gölgesi
+    if(abs(vNorm.x) > 0.5 || abs(vNorm.z) > 0.5) light *= 0.8;
+
+    FragColor = vec4(col * light, 1.0);
+})";
 
 static GLuint compileProg(const char* vs, const char* fs) {
     GLuint v = glCreateShader(GL_VERTEX_SHADER); glShaderSource(v,1,&vs,nullptr); glCompileShader(v);
@@ -355,14 +382,16 @@ static GLuint compileProg(const char* vs, const char* fs) {
 
 void Renderer::init(int w, int h) {
     screenW = w; screenH = h;
-    entityProg = compileProg(VS_ENT, FS_ENT);
-    glGenVertexArrays(1, &entityVAO); glGenBuffers(1, &entityVBO);
-    glBindVertexArray(entityVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, entityVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(CUBE_VERTICES), CUBE_VERTICES, GL_STATIC_DRAW);
-    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 12, (void*)0);
+    cubeProg = compileProg(VS_PROC, FS_PROC);
+    glGenVertexArrays(1, &cubeVAO); glGenBuffers(1, &cubeVBO);
+    glBindVertexArray(cubeVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, cubeVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(PROCEDURAL_CUBE), PROCEDURAL_CUBE, GL_STATIC_DRAW);
+    glEnableVertexAttribArray(0); glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, (void*)0);
+    glEnableVertexAttribArray(1); glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 24, (void*)12);
     glBindVertexArray(0);
     glEnable(GL_DEPTH_TEST);
+    glEnable(GL_CULL_FACE);
 }
 
 void Renderer::resize(int w, int h) {
@@ -370,18 +399,60 @@ void Renderer::resize(int w, int h) {
     glViewport(0, 0, w, h);
 }
 
-void Renderer::drawCube(const Mat4& vp, Vec3 pos, Vec3 scale, float r, float g, float b, float) {
+void Renderer::drawBlockProcedural(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw) {
     Mat4 model;
-    model.m[0] = scale.x; model.m[5] = scale.y; model.m[10] = scale.z;
-    model.m[12] = pos.x;  model.m[13] = pos.y;  model.m[14] = pos.z; model.m[15] = 1.0f;
+    float rad = yaw * 0.01745329f;
+    model.m[0] = scale.x * cosf(rad); model.m[2] = scale.x * sinf(rad);
+    model.m[5] = scale.y;
+    model.m[8] = scale.z * -sinf(rad); model.m[10] = scale.z * cosf(rad);
+    model.m[12] = pos.x; model.m[13] = pos.y; model.m[14] = pos.z; model.m[15] = 1.0f;
     Mat4 mvp = vp * model;
 
-    glUseProgram(entityProg);
-    glUniformMatrix4fv(glGetUniformLocation(entityProg, "uMVP"), 1, GL_FALSE, mvp.m);
-    glUniform3f(glGetUniformLocation(entityProg, "uColor"), r, g, b);
-    glBindVertexArray(entityVAO);
+    Vec3 color{0.5f, 0.5f, 0.5f};
+    switch (blockId) {
+        case GRASS:       color = {0.35f, 0.72f, 0.28f}; break;
+        case DIRT:        color = {0.52f, 0.35f, 0.22f}; break;
+        case STONE:       color = {0.55f, 0.55f, 0.55f}; break;
+        case COBBLESTONE: color = {0.42f, 0.42f, 0.42f}; break;
+        case SAND:        color = {0.88f, 0.82f, 0.56f}; break;
+        case OAK_LOG:     color = {0.40f, 0.26f, 0.13f}; break;
+        case OAK_PLANKS:  color = {0.65f, 0.48f, 0.28f}; break;
+        case OAK_LEAVES:  color = {0.20f, 0.55f, 0.15f}; break;
+        case DIAMOND_BLOCK:color= {0.32f, 0.90f, 0.88f}; break;
+        case GOLD_BLOCK:  color = {0.95f, 0.82f, 0.20f}; break;
+        case IRON_BLOCK:  color = {0.85f, 0.85f, 0.85f}; break;
+        case BEDROCK:     color = {0.15f, 0.15f, 0.15f}; break;
+        default:          color = {0.60f, 0.60f, 0.60f}; break;
+    }
+
+    glUseProgram(cubeProg);
+    glUniformMatrix4fv(glGetUniformLocation(cubeProg, "uMVP"), 1, GL_FALSE, mvp.m);
+    glUniform3f(glGetUniformLocation(cubeProg, "uWorldPos"), pos.x, pos.y, pos.z);
+    glUniform3f(glGetUniformLocation(cubeProg, "uBaseColor"), color.x, color.y, color.z);
+    glUniform1i(glGetUniformLocation(cubeProg, "uBlockType"), blockId);
+
+    glBindVertexArray(cubeVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
+}
+
+void Renderer::drawMobProcedural(const Mat4& vp, const Entity& e) {
+    if (e.type == ENT_PIG) {
+        // Gövde ve Kafa (Pembe Domuz)
+        drawBlockProcedural(vp, e.pos, {0.9f, 0.8f, 1.2f}, 0, e.yaw);
+        drawBlockProcedural(vp, e.pos + Vec3{0, 0.5f, 0.6f}, {0.6f, 0.6f, 0.6f}, 0, e.yaw);
+    } else if (e.type == ENT_COW) {
+        // Gövde (Kahverengi/Beyaz İnek)
+        drawBlockProcedural(vp, e.pos, {1.0f, 1.1f, 1.4f}, 0, e.yaw);
+        drawBlockProcedural(vp, e.pos + Vec3{0, 0.7f, 0.7f}, {0.7f, 0.7f, 0.7f}, 0, e.yaw);
+    } else if (e.type == ENT_SHEEP) {
+        // Gövde (Yünlü Koyun)
+        drawBlockProcedural(vp, e.pos, {1.0f, 1.0f, 1.3f}, 0, e.yaw);
+        drawBlockProcedural(vp, e.pos + Vec3{0, 0.6f, 0.65f}, {0.6f, 0.6f, 0.6f}, 0, e.yaw);
+    } else if (e.type == ENT_ITEM_DROP) {
+        // Yerde dönen 3D eşya
+        drawBlockProcedural(vp, e.pos, {0.35f, 0.35f, 0.35f}, static_cast<uint8_t>(e.itemId), e.animTime * 60.0f);
+    }
 }
 
 void Renderer::frame(World& world, Player& player, float) {
@@ -389,12 +460,11 @@ void Renderer::frame(World& world, Player& player, float) {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     glEnable(GL_DEPTH_TEST);
 
-    Mat4 proj = matPerspective(1.222f, (float)screenW / (float)screenH, 0.05f, 500.0f);
+    Mat4 proj = matPerspective(1.222f, (float)screenW / (float)screenH, 0.05f, 600.0f);
     Vec3 eye = player.pos + Vec3{0, player.eyeH, 0};
     Mat4 view = matLookAt(eye, eye + player.lookDir(), {0, 1, 0});
     Mat4 vp = proj * view;
 
-    // Chunkları çiz
     int pcx = flr(player.pos.x / CS), pcz = flr(player.pos.z / CS);
     for (int dx = -RD; dx <= RD; ++dx) {
         for (int dz = -RD; dz <= RD; ++dz) {
@@ -403,27 +473,17 @@ void Renderer::frame(World& world, Player& player, float) {
                 for (int x = 0; x < CS; x += 2) {
                     for (int z = 0; z < CS; z += 2) {
                         int h = ch->heightMap[x * CS + z];
-                        drawCube(vp, {(float)(ch->cx * CS + x), (float)h, (float)(ch->cz * CS + z)},
-                                 {1.0f, 1.0f, 1.0f}, 0.35f, 0.75f, 0.3f, 0);
+                        drawBlockProcedural(vp, {(float)(ch->cx * CS + x), (float)h, (float)(ch->cz * CS + z)},
+                                            {1.0f, 1.0f, 1.0f}, GRASS, 0.0f);
                     }
                 }
             }
         }
     }
 
-    // Mobları ve Atılan Eşyaları Çiz
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
-        if (!e.alive) continue;
-        if (e.type == ENT_PIG) {
-            drawCube(vp, e.pos, {0.9f, 0.9f, 1.3f}, 0.95f, 0.6f, 0.6f, e.yaw);
-        } else if (e.type == ENT_COW) {
-            drawCube(vp, e.pos, {1.0f, 1.3f, 1.5f}, 0.4f, 0.25f, 0.15f, e.yaw);
-        } else if (e.type == ENT_SHEEP) {
-            drawCube(vp, e.pos, {0.9f, 1.1f, 1.3f}, 0.9f, 0.9f, 0.9f, e.yaw);
-        } else if (e.type == ENT_ITEM_DROP) {
-            drawCube(vp, e.pos, {0.3f, 0.3f, 0.3f}, 0.9f, 0.8f, 0.2f, e.animTime * 50.0f);
-        }
+        if (e.alive) drawMobProcedural(vp, e);
     }
 }
 
@@ -458,7 +518,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->world->worldPath = gState->saveDirectory;
     gState->renderer.init(w, h);
 
-    // Varsa dünyayı yükle, yoksa üret
     gState->world->loadWorld(gState->saveDirectory);
     for (int dx = -3; dx <= 3; ++dx) {
         for (int dz = -3; dz <= 3; ++dz) {
@@ -470,9 +529,9 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->player.pos = {0, 75, 0};
     gState->player.inv.add(OAK_PLANKS, 64);
     gState->player.inv.add(COBBLESTONE, 64);
-    gState->player.inv.add(TORCH, 32);
+    gState->player.inv.add(DIAMOND_BLOCK, 64);
     gState->initialized = true;
-    LOGI("AAA OmniCraft Başlatıldı [%dx%d]", w, h);
+    LOGI("AAA OmniCraft Başarıyla Başlatıldı [%dx%d]", w, h);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeResize(JNIEnv*, jclass, jint w, jint h) {
@@ -497,13 +556,13 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.pos += gs.player.vel * sdt;
     gs.player.vel.x *= 0.82f; gs.player.vel.z *= 0.82f;
 
-    // Eşya toplama mıknatısı
+    // Yerdeki eşyaları otomatik toplama
     {
         std::lock_guard lk(gs.world->entityMtx);
         for (auto& e : gs.world->entities) {
             if (e.alive && e.type == ENT_ITEM_DROP) {
                 float dist = (e.pos - gs.player.pos).len();
-                if (dist < 1.6f) {
+                if (dist < 1.8f) {
                     gs.player.inv.add(e.itemId, 1);
                     e.alive = false;
                 }
@@ -530,15 +589,15 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jin
     if (!gState) return;
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, 1.62f, 0}, gState->player.lookDir(), REACH);
     if (type == 0 && hit.hit) {
-        // Blok Kır ve Eşya Düşür
+        // Blok Kır ve Yere 3D Eşya Düşür
         uint8_t oldB = gState->world->blockAt(hit.block.x, hit.block.y, hit.block.z);
         gState->world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
         uint16_t drop = BD(oldB).dropId;
         if (drop != AIR) {
-            gState->world->spawnItemDrop(drop, {(float)hit.block.x + 0.5f, (float)hit.block.y + 0.5f, (float)hit.block.z + 0.5f}, {0, 2.0f, 0});
+            gState->world->spawnItemDrop(drop, {(float)hit.block.x + 0.5f, (float)hit.block.y + 0.5f, (float)hit.block.z + 0.5f}, {0, 2.5f, 0});
         }
     } else if (type == 1 && hit.hit) {
-        // Blok Koy
+        // Blok Yerleştir
         ItemStack& held = gState->player.inv.active();
         if (!held.empty() && held.id < BLOCK_COUNT) {
             gState->world->setBlock(hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z, (uint8_t)held.id);

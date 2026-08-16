@@ -67,7 +67,8 @@ object CraftLogger {
 
     private fun logToFile(level: String, message: String) {
         val timestamp = timeFormat.format(Date())
-        val entry = "[$timestamp] [$level] [${Thread.currentThread().name}]: $message\n"
+        val threadName = Thread.currentThread().name
+        val entry = "[$timestamp] [$level] [$threadName]: $message\n"
         Log.println(if (level == "ERROR") Log.ERROR else Log.INFO, TAG, message)
 
         logExecutor.execute {
@@ -93,7 +94,7 @@ object CraftLogger {
                 appendLine("================ OMNI CRAFT CRASH RAPORU ================")
                 appendLine("Tarih: ${timeFormat.format(Date())}")
                 appendLine("Cihaz: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})")
-                appendLine("Hata Alan Thread: ${thread.name} (ID: ${thread.id})")
+                appendLine("Hata Alan Thread: ${thread.name}")
                 appendLine("----------------- YIGIN IZI (STACKTRACE) -----------------")
                 appendLine(sw.toString())
                 appendLine("==========================================================")
@@ -184,7 +185,6 @@ class Activity : AndroidActivity() {
         setupMinecraftHUD(root)
         setContentView(root)
 
-        // Güvenli Tam Ekran Çağrısı (NPE Önleyici)
         root.post { applyFullScreen() }
     }
 
@@ -210,27 +210,19 @@ class Activity : AndroidActivity() {
     private fun setupMinecraftHUD(root: FrameLayout) {
         val hud = FrameLayout(this)
 
-        // 1. Nişangah (Crosshair)
-        val crosshair = View(this).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.argb(180, 255, 255, 255))
-            }
-            layoutParams = FrameLayout.LayoutParams(6, 36).apply {
-                gravity = Gravity.CENTER
-            }
+        // 1. Vektörel Nişangah (Crosshair)
+        val crosshairV = View(this).apply {
+            background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
+            layoutParams = FrameLayout.LayoutParams(6, 36).apply { gravity = Gravity.CENTER }
         }
         val crosshairH = View(this).apply {
-            background = GradientDrawable().apply {
-                setColor(Color.argb(180, 255, 255, 255))
-            }
-            layoutParams = FrameLayout.LayoutParams(36, 6).apply {
-                gravity = Gravity.CENTER
-            }
+            background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
+            layoutParams = FrameLayout.LayoutParams(36, 6).apply { gravity = Gravity.CENTER }
         }
-        hud.addView(crosshair)
+        hud.addView(crosshairV)
         hud.addView(crosshairH)
 
-        // 2. Sol Analog Joystick
+        // 2. Sol Vektörel Joystick
         val joyBase = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -244,7 +236,7 @@ class Activity : AndroidActivity() {
         }
         hud.addView(joyBase)
 
-        // 3. Minecraft Klasik 9 Slotlu Hotbar
+        // 3. Minecraft 9'lu Vektörel Hotbar
         val hotbarLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER
@@ -289,35 +281,7 @@ class Activity : AndroidActivity() {
         }
         hud.addView(hotbarLayout)
 
-        // 4. Kalp ve Açlık Barları (Minecraft HUD)
-        val statusLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply {
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = 140
-            }
-        }
-
-        val heartsText = TextView(this).apply {
-            text = "❤❤❤❤❤❤❤❤❤❤"
-            textSize = 16f
-            setTextColor(Color.RED)
-            setPadding(0, 0, 30, 0)
-        }
-        val hungerText = TextView(this).apply {
-            text = "🍗🍗🍗🍗🍗🍗🍗🍗🍗🍗"
-            textSize = 16f
-            setTextColor(Color.rgb(200, 130, 40))
-        }
-        statusLayout.addView(heartsText)
-        statusLayout.addView(hungerText)
-        hud.addView(statusLayout)
-
-        // 5. Sağ Aksiyon Butonları (KIR, KOY, ZIPLA, AT)
+        // 4. Sağ Aksiyon Butonları
         val rightPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(
@@ -362,7 +326,7 @@ class Activity : AndroidActivity() {
         rightPanel.addView(createBtn(getString(R.string.btn_jump), Color.argb(180, 30, 80, 180), { Engine.nativeJump() }))
         hud.addView(rightPanel)
 
-        // 6. Üst Menü & Duraklatma / Çanta Çubuğu
+        // 5. Üst Duraklatma & Çanta Paneli
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(
@@ -516,7 +480,7 @@ class Activity : AndroidActivity() {
         }
 
         val title = TextView(this).apply {
-            text = "OMNI CRAFT - OYUN DURAKLATILDI"
+            text = "OMNI CRAFT - DURAKLATILDI"
             textSize = 22f
             setTextColor(Color.WHITE)
             setPadding(0, 0, 0, 40)

@@ -11,17 +11,11 @@
 #include <vector>
 #include <array>
 #include <unordered_map>
-#include <unordered_set>
 #include <algorithm>
-#include <random>
 #include <memory>
 #include <mutex>
 #include <shared_mutex>
-#include <thread>
 #include <atomic>
-#include <condition_variable>
-#include <queue>
-#include <functional>
 #include <string>
 #include <ctime>
 #include <csignal>
@@ -35,17 +29,15 @@
 static constexpr int CS        = 16;
 static constexpr int WH        = 256;
 static constexpr int RD        = 8;
-static constexpr int MESH_RD   = 7;
 static constexpr float GRAVITY = -28.0f;
 static constexpr float JUMP_VEL= 9.5f;
 static constexpr float WALK_SPD= 4.317f;
-static constexpr float SPRINT_SPD= 5.612f;
-static constexpr float SNEAK_SPD= 1.295f;
-static constexpr float REACH   = 5.0f;
+static constexpr float SPRINT_SPD= 5.8f;
+static constexpr float SNEAK_SPD= 1.3f;
+static constexpr float REACH   = 5.2f;
 static constexpr int INV_SIZE  = 36;
 static constexpr int HOTBAR_SZ = 9;
 static constexpr int MAX_STACK = 64;
-static constexpr int ATLAS_DIM = 16;
 
 enum BlockID : uint8_t {
     AIR=0, GRASS, DIRT, STONE, COBBLESTONE, SAND, GRAVEL,
@@ -60,9 +52,9 @@ enum BlockID : uint8_t {
 
 enum ItemID : uint16_t {
     ITEM_NONE=0, ITEM_STICK=256, ITEM_RAW_PORK, ITEM_COOKED_PORK,
-    ITEM_RAW_BEEF, ITEM_COOKED_BEEF, ITEM_RAW_MUTTON, ITEM_COOKED_MUTTON,
-    ITEM_WOOL, ITEM_LEATHER, ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT,
-    ITEM_DIAMOND, ITEM_SWORD_IRON, ITEM_PICKAXE_IRON, ITEM_AXE_IRON
+    ITEM_RAW_BEEF, ITEM_COOKED_BEEF, ITEM_RAW_MUTTON, ITEM_WOOL,
+    ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND,
+    ITEM_SWORD_IRON, ITEM_PICKAXE_IRON
 };
 
 enum EntityType : uint8_t {
@@ -71,10 +63,11 @@ enum EntityType : uint8_t {
 
 struct BlockDef {
     const char* name;
-    bool solid, transparent, fluid, gravity;
+    bool solid;
+    bool transparent;
+    bool fluid;
+    bool gravity;
     float hardness;
-    uint8_t texTop, texSide, texBottom;
-    uint8_t lightEmit, lightAbsorb;
     float friction;
     uint16_t dropId;
 };
@@ -92,6 +85,7 @@ struct Vec3 {
 };
 
 struct Vec3i { int x, y, z; bool operator==(const Vec3i& o) const { return x==o.x && y==o.y && z==o.z; } };
+
 struct Mat4 {
     float m[16] = {};
     Mat4 operator*(const Mat4& o) const {
@@ -103,7 +97,8 @@ struct Mat4 {
 };
 
 struct ItemStack {
-    uint16_t id=0; uint8_t count=0;
+    uint16_t id = 0;
+    uint8_t count = 0;
     ItemStack() = default;
     ItemStack(uint16_t i, uint8_t c) : id(i), count(c) {}
     bool empty() const { return id == 0 || count == 0; }
@@ -120,7 +115,7 @@ struct Entity {
     uint32_t id = 0;
     EntityType type;
     Vec3 pos{}, vel{};
-    float yaw = 0.0f, pitch = 0.0f;
+    float yaw = 0.0f;
     float health = 10.0f;
     float animTime = 0.0f;
     uint16_t itemId = 0;
@@ -132,14 +127,6 @@ struct Chunk {
     std::array<uint8_t, CS * WH * CS> blocks;
     std::array<uint8_t, CS * CS> heightMap;
     std::atomic<bool> generated{false};
-    std::atomic<bool> meshDirty{true};
-    std::atomic<bool> meshReady{false};
-
-    GLuint vao=0, vbo=0, ebo=0;
-    int indexCount = 0;
-    std::vector<float> pendingVerts;
-    std::vector<uint32_t> pendingIdx;
-    std::mutex meshLock;
 
     Chunk(int x, int z);
     inline int idx(int x, int y, int z) const { return x * WH * CS + y * CS + z; }
@@ -154,7 +141,6 @@ public:
     std::vector<Entity> entities;
     std::mutex entityMtx;
     uint32_t nextEntityId = 1;
-    uint64_t seed = 133742069;
     std::string worldPath = "";
 
     static uint64_t key(int cx, int cz) {
@@ -181,12 +167,8 @@ public:
 struct Player {
     Vec3 pos{0, 80, 0}, vel{};
     float yaw = 0, pitch = 0;
-    float health = 20.0f, maxHp = 20.0f, hunger = 20.0f, maxHunger = 20.0f;
     float eyeH = 1.62f;
-    bool ground = false, sneaking = false, sprinting = false, flying = false;
-    float breakProg = 0.0f;
-    Vec3i breakTarget{};
-    bool breaking = false;
+    bool sneaking = false, sprinting = false;
     Inventory inv;
     Vec3 lookDir() const {
         float y2 = yaw * (3.14159265f / 180.0f), p = pitch * (3.14159265f / 180.0f);
@@ -196,15 +178,15 @@ struct Player {
 
 class Renderer {
 public:
-    GLuint terrainProg=0, entityProg=0;
-    GLuint atlasTex=0;
-    GLuint entityVAO=0, entityVBO=0;
-    int screenW=1, screenH=1;
+    GLuint cubeProg = 0;
+    GLuint cubeVAO = 0, cubeVBO = 0;
+    int screenW = 1920, screenH = 1080;
 
     void init(int w, int h);
     void resize(int w, int h);
     void frame(World& world, Player& player, float time);
-    void drawCube(const Mat4& vp, Vec3 pos, Vec3 scale, float r, float g, float b, float yaw);
+    void drawBlockProcedural(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw);
+    void drawMobProcedural(const Mat4& vp, const Entity& e);
 };
 
 struct GameState {
@@ -212,8 +194,8 @@ struct GameState {
     Player player;
     Renderer renderer;
     std::atomic<bool> initialized{false};
-    int screenW=1920, screenH=1080;
-    float joySX=0, joySY=0;
-    float time=0;
+    int screenW = 1920, screenH = 1080;
+    float joySX = 0, joySY = 0;
+    float time = 0;
     std::string saveDirectory = "";
 };
