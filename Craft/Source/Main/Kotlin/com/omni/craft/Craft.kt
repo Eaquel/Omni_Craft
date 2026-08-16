@@ -2,6 +2,7 @@ package com.omni.craft
 
 import android.app.Activity as AndroidActivity
 import android.app.Application
+import android.app.Dialog
 import android.content.Context
 import android.content.pm.ActivityInfo
 import android.graphics.Color
@@ -23,6 +24,7 @@ import java.util.Locale
 import java.util.concurrent.Executors
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
+import org.json.JSONArray
 
 class CraftApp : Application() {
     override fun onCreate() {
@@ -54,7 +56,6 @@ object CraftLogger {
     fun getLogDirPath(): String = logDir?.absolutePath ?: ""
 
     fun info(message: String) = logToFile("INFO", message)
-    fun warn(message: String) = logToFile("WARN", message)
     fun error(message: String, throwable: Throwable? = null) {
         val stackTrace = throwable?.let {
             val sw = StringWriter()
@@ -112,33 +113,33 @@ object Engine {
     }
 
     external fun nativeSetupCrashHandler(logPath: String)
-    external fun nativeInit(w: Int, h: Int, seed: Long)
+    external fun nativeInit(w: Int, h: Int, saveDir: String)
     external fun nativeResize(w: Int, h: Int)
     external fun nativeFrame(dt: Float)
     external fun nativeIsInitialized(): Boolean
     external fun nativeJoystick(x: Float, y: Float)
     external fun nativeCameraInput(dx: Float, dy: Float)
     external fun nativeTap(type: Int)
+    external fun nativeDropItem()
     external fun nativeJump()
     external fun nativeSneak(on: Boolean)
     external fun nativeSprint(on: Boolean)
-    external fun nativeFlyUp(on: Boolean)
-    external fun nativeFlyDown(on: Boolean)
-    external fun nativeStartBreak()
-    external fun nativeStopBreak()
+    external fun nativeSelectSlot(slot: Int)
+    external fun nativeSaveWorld()
+    external fun nativeGetInventory(): String
     external fun nativeDestroy()
 
-    class GameRenderer : GLSurfaceView.Renderer {
+    class GameRenderer(private val saveDir: String) : GLSurfaceView.Renderer {
         private var lastTimeNs = System.nanoTime()
 
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
             nativeSetupCrashHandler(CraftLogger.getLogDirPath())
-            CraftLogger.info("GLES 3.2 Render Yuzeyi Olusturuldu.")
+            CraftLogger.info("GLES 3.2 Render Yuzeyi Hazirlandi.")
         }
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
             if (!nativeIsInitialized()) {
-                nativeInit(width, height, 133742069L)
+                nativeInit(width, height, saveDir)
             } else {
                 nativeResize(width, height)
             }
@@ -163,7 +164,6 @@ class Activity : AndroidActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-        hideSystemUI()
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             window.attributes.preferredDisplayModeId =
@@ -171,34 +171,153 @@ class Activity : AndroidActivity() {
         }
 
         val root = FrameLayout(this)
+        val saveDir = File(filesDir, "world_data").apply { if (!exists()) mkdirs() }.absolutePath
+
         glView = GLSurfaceView(this).apply {
             setEGLContextClientVersion(3)
             setPreserveEGLContextOnPause(true)
-            setRenderer(Engine.GameRenderer())
+            setRenderer(Engine.GameRenderer(saveDir))
             renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
         }
         root.addView(glView)
 
-        setupTurkishUI(root)
+        setupMinecraftHUD(root)
         setContentView(root)
+
+        // Güvenli Tam Ekran Çağrısı (NPE Önleyici)
+        root.post { applyFullScreen() }
     }
 
-    private fun setupTurkishUI(root: FrameLayout) {
+    private fun applyFullScreen() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.insetsController?.let { controller ->
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
+        }
+    }
+
+    private fun setupMinecraftHUD(root: FrameLayout) {
         val hud = FrameLayout(this)
 
+        // 1. Nişangah (Crosshair)
+        val crosshair = View(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.argb(180, 255, 255, 255))
+            }
+            layoutParams = FrameLayout.LayoutParams(6, 36).apply {
+                gravity = Gravity.CENTER
+            }
+        }
+        val crosshairH = View(this).apply {
+            background = GradientDrawable().apply {
+                setColor(Color.argb(180, 255, 255, 255))
+            }
+            layoutParams = FrameLayout.LayoutParams(36, 6).apply {
+                gravity = Gravity.CENTER
+            }
+        }
+        hud.addView(crosshair)
+        hud.addView(crosshairH)
+
+        // 2. Sol Analog Joystick
         val joyBase = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.argb(80, 255, 255, 255))
-                setStroke(3, Color.argb(150, 200, 200, 200))
+                setColor(Color.argb(70, 255, 255, 255))
+                setStroke(3, Color.argb(160, 200, 200, 200))
             }
-            layoutParams = FrameLayout.LayoutParams(320, 320).apply {
+            layoutParams = FrameLayout.LayoutParams(280, 280).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
-                setMargins(70, 0, 0, 70)
+                setMargins(60, 0, 0, 60)
             }
         }
         hud.addView(joyBase)
 
+        // 3. Minecraft Klasik 9 Slotlu Hotbar
+        val hotbarLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            background = GradientDrawable().apply {
+                setColor(Color.argb(140, 20, 20, 20))
+                cornerRadius = 12f
+                setStroke(3, Color.argb(180, 150, 150, 150))
+            }
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                110
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = 24
+            }
+        }
+
+        for (i in 0 until 9) {
+            val slot = TextView(this).apply {
+                text = "${i + 1}"
+                textSize = 12f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    setColor(if (i == 0) Color.argb(180, 100, 100, 100) else Color.argb(80, 50, 50, 50))
+                    cornerRadius = 8f
+                    setStroke(2, Color.argb(160, 200, 200, 200))
+                }
+                layoutParams = LinearLayout.LayoutParams(96, 96).apply {
+                    setMargins(6, 6, 6, 6)
+                }
+                setOnClickListener {
+                    Engine.nativeSelectSlot(i)
+                    for (j in 0 until hotbarLayout.childCount) {
+                        (hotbarLayout.getChildAt(j).background as GradientDrawable).setColor(
+                            if (j == i) Color.argb(180, 100, 100, 100) else Color.argb(80, 50, 50, 50)
+                        )
+                    }
+                }
+            }
+            hotbarLayout.addView(slot)
+        }
+        hud.addView(hotbarLayout)
+
+        // 4. Kalp ve Açlık Barları (Minecraft HUD)
+        val statusLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = 140
+            }
+        }
+
+        val heartsText = TextView(this).apply {
+            text = "❤❤❤❤❤❤❤❤❤❤"
+            textSize = 16f
+            setTextColor(Color.RED)
+            setPadding(0, 0, 30, 0)
+        }
+        val hungerText = TextView(this).apply {
+            text = "🍗🍗🍗🍗🍗🍗🍗🍗🍗🍗"
+            textSize = 16f
+            setTextColor(Color.rgb(200, 130, 40))
+        }
+        statusLayout.addView(heartsText)
+        statusLayout.addView(hungerText)
+        hud.addView(statusLayout)
+
+        // 5. Sağ Aksiyon Butonları (KIR, KOY, ZIPLA, AT)
         val rightPanel = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             layoutParams = FrameLayout.LayoutParams(
@@ -206,22 +325,22 @@ class Activity : AndroidActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
-                setMargins(0, 0, 60, 60)
+                setMargins(0, 0, 50, 50)
             }
         }
 
         fun createBtn(title: String, color: Int, onClick: () -> Unit, onTouchAction: ((Boolean) -> Unit)? = null): Button {
             return Button(this).apply {
                 text = title
-                textSize = 14f
+                textSize = 13f
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
-                    cornerRadius = 24f
+                    cornerRadius = 20f
                     setColor(color)
                     setStroke(2, Color.WHITE)
                 }
-                layoutParams = LinearLayout.LayoutParams(220, 110).apply {
-                    setMargins(0, 10, 0, 10)
+                layoutParams = LinearLayout.LayoutParams(190, 95).apply {
+                    setMargins(0, 8, 0, 8)
                 }
                 if (onTouchAction != null) {
                     setOnTouchListener { _, event ->
@@ -237,30 +356,29 @@ class Activity : AndroidActivity() {
             }
         }
 
-        rightPanel.addView(createBtn(getString(R.string.btn_break), Color.argb(180, 180, 40, 40), {}, { pressed ->
-            if (pressed) Engine.nativeStartBreak() else Engine.nativeStopBreak()
-        }))
+        rightPanel.addView(createBtn(getString(R.string.btn_break), Color.argb(180, 180, 40, 40), { Engine.nativeTap(0) }))
         rightPanel.addView(createBtn(getString(R.string.btn_place), Color.argb(180, 40, 140, 40), { Engine.nativeTap(1) }))
+        rightPanel.addView(createBtn(getString(R.string.btn_drop), Color.argb(180, 180, 120, 20), { Engine.nativeDropItem() }))
         rightPanel.addView(createBtn(getString(R.string.btn_jump), Color.argb(180, 30, 80, 180), { Engine.nativeJump() }))
         hud.addView(rightPanel)
 
+        // 6. Üst Menü & Duraklatma / Çanta Çubuğu
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                topMargin = 30
+                gravity = Gravity.TOP or Gravity.END
+                setMargins(0, 30, 50, 0)
             }
         }
 
-        topBar.addView(createBtn(getString(R.string.btn_sprint), Color.argb(160, 100, 100, 100), {}, { Engine.nativeSprint(it) }))
-        topBar.addView(createBtn(getString(R.string.btn_sneak), Color.argb(160, 100, 100, 100), {}, { Engine.nativeSneak(it) }))
-        topBar.addView(createBtn(getString(R.string.btn_fly_up), Color.argb(160, 50, 150, 200), {}, { Engine.nativeFlyUp(it) }))
-        topBar.addView(createBtn(getString(R.string.btn_fly_down), Color.argb(160, 50, 150, 200), {}, { Engine.nativeFlyDown(it) }))
+        topBar.addView(createBtn(getString(R.string.btn_inv), Color.argb(160, 80, 80, 80), { showInventoryDialog() }))
+        topBar.addView(createBtn(getString(R.string.btn_pause), Color.argb(160, 120, 40, 40), { showPauseMenu() }))
         hud.addView(topBar)
 
+        // Dokunmatik Kontrol Katmanı
         hud.setOnTouchListener { _, event ->
             val pointerIndex = event.actionIndex
             val pId = event.getPointerId(pointerIndex)
@@ -269,9 +387,9 @@ class Activity : AndroidActivity() {
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (x < root.width * 0.45f && y > root.height * 0.4f) {
+                    if (x < root.width * 0.4f && y > root.height * 0.35f) {
                         updateJoystick(x, y, joyBase)
-                    } else if (x > root.width * 0.4f && !isCamDragging) {
+                    } else if (x > root.width * 0.35f && !isCamDragging) {
                         isCamDragging = true
                         camPointerId = pId
                         lastTouchX = x
@@ -289,7 +407,7 @@ class Activity : AndroidActivity() {
                             Engine.nativeCameraInput(dx, -dy)
                             lastTouchX = px
                             lastTouchY = py
-                        } else if (px < root.width * 0.45f) {
+                        } else if (px < root.width * 0.4f) {
                             updateJoystick(px, py, joyBase)
                         }
                     }
@@ -329,34 +447,132 @@ class Activity : AndroidActivity() {
         Engine.nativeJoystick(dx / maxRadius, dy / maxRadius)
     }
 
-    private fun hideSystemUI() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.insetsController?.apply {
-                hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        } else {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (
-                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-            )
+    private fun showInventoryDialog() {
+        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.argb(220, 20, 20, 20))
         }
+
+        val title = TextView(this).apply {
+            text = "ENVANTER (36 Slot)"
+            textSize = 20f
+            setTextColor(Color.WHITE)
+            setPadding(0, 20, 0, 30)
+        }
+        layout.addView(title)
+
+        val grid = GridLayout(this).apply {
+            columnCount = 9
+            rowCount = 4
+        }
+
+        try {
+            val invData = JSONArray(Engine.nativeGetInventory())
+            for (i in 0 until invData.length()) {
+                val item = invData.getJSONObject(i)
+                val count = item.getInt("count")
+                val id = item.getInt("id")
+                val slotView = TextView(this).apply {
+                    text = if (count > 0) "ID:$id\nx$count" else ""
+                    textSize = 10f
+                    setTextColor(Color.YELLOW)
+                    gravity = Gravity.CENTER
+                    background = GradientDrawable().apply {
+                        setColor(Color.argb(120, 60, 60, 60))
+                        setStroke(2, Color.WHITE)
+                        cornerRadius = 8f
+                    }
+                    layoutParams = GridLayout.LayoutParams().apply {
+                        width = 110
+                        height = 110
+                        setMargins(6, 6, 6, 6)
+                    }
+                }
+                grid.addView(slotView)
+            }
+        } catch (_: Exception) {}
+
+        layout.addView(grid)
+
+        val closeBtn = Button(this).apply {
+            text = "Kapat"
+            setOnClickListener { dialog.dismiss(); applyFullScreen() }
+            layoutParams = LinearLayout.LayoutParams(250, 100).apply { topMargin = 30 }
+        }
+        layout.addView(closeBtn)
+
+        dialog.setContentView(layout)
+        dialog.show()
+    }
+
+    private fun showPauseMenu() {
+        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.argb(230, 15, 15, 15))
+        }
+
+        val title = TextView(this).apply {
+            text = "OMNI CRAFT - OYUN DURAKLATILDI"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            setPadding(0, 0, 0, 40)
+        }
+        layout.addView(title)
+
+        fun createMenuBtn(txt: String, onClick: () -> Unit): Button {
+            return Button(this).apply {
+                text = txt
+                textSize = 16f
+                setTextColor(Color.WHITE)
+                background = GradientDrawable().apply {
+                    cornerRadius = 16f
+                    setColor(Color.argb(200, 50, 50, 50))
+                    setStroke(2, Color.WHITE)
+                }
+                layoutParams = LinearLayout.LayoutParams(400, 110).apply {
+                    setMargins(0, 12, 0, 12)
+                }
+                setOnClickListener { onClick() }
+            }
+        }
+
+        layout.addView(createMenuBtn(getString(R.string.menu_resume)) {
+            dialog.dismiss()
+            applyFullScreen()
+        })
+        layout.addView(createMenuBtn(getString(R.string.menu_save)) {
+            Engine.nativeSaveWorld()
+            Toast.makeText(this, getString(R.string.save_success), Toast.LENGTH_SHORT).show()
+        })
+        layout.addView(createMenuBtn(getString(R.string.menu_exit)) {
+            Engine.nativeSaveWorld()
+            dialog.dismiss()
+            finish()
+        })
+
+        dialog.setContentView(layout)
+        dialog.show()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyFullScreen()
     }
 
     override fun onResume() {
         super.onResume()
         glView.onResume()
-        hideSystemUI()
+        applyFullScreen()
     }
 
     override fun onPause() {
         super.onPause()
         glView.onPause()
+        Engine.nativeSaveWorld()
     }
 
     override fun onDestroy() {
