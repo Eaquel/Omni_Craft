@@ -18,8 +18,7 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
         char buf[512];
         snprintf(buf, sizeof(buf),
                  "=== OMNI CRAFT CRASH ===\n"
-                 "Signal: %d\n"
-                 "Address: %p\n"
+                 "Signal: %d, Addr: %p\n"
                  "Time: %04d-%02d-%02d %02d:%02d:%02d\n",
                  sig, info->si_addr,
                  timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
@@ -27,15 +26,18 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
         write(fd, buf, strlen(buf));
         close(fd);
     }
-    LOGE("Native crash logged to %s", filePath);
+    LOGE("Yerel motor çökmesi kaydedildi: %s", filePath);
     _exit(1);
 }
 
-// 4x4 Atlas Yerleşimi
-// 0: Grass Top, 1: Grass Side, 2: Dirt, 3: Stone
-// 4: Cobble, 5: Planks, 6: Log Side, 7: Log Top
-// 8: Leaves, 9: Diamond Ore, 10: Coal Ore, 11: Bedrock
-// 12: Crafting Table, 13: Sand, 14: Water, 15: Breaking Crack
+// Android Little-Endian formatı için RGBA renk dönüştürücü
+static inline uint32_t makeRGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
+    return (static_cast<uint32_t>(a) << 24) |
+           (static_cast<uint32_t>(b) << 16) |
+           (static_cast<uint32_t>(g) << 8)  |
+            static_cast<uint32_t>(r);
+}
+
 static constexpr BlockDef BLOCK_TABLE[BLOCK_COUNT] = {
     {"hava",        false, true,  false, 0.0f, 0,  0,  0,  AIR},
     {"cimen",       true,  false, false, 0.6f, 0,  1,  2,  DIRT},
@@ -114,9 +116,8 @@ static inline float smoothNoise(float x, float z) {
 }
 
 static inline float getTerrainHeight(float x, float z) {
-    float h = smoothNoise(x * 0.015f, z * 0.015f) * 18.0f +
-              smoothNoise(x * 0.05f,  z * 0.05f)  * 8.0f;
-    return 30.0f + h;
+    return 30.0f + smoothNoise(x * 0.015f, z * 0.015f) * 18.0f +
+                   smoothNoise(x * 0.05f,  z * 0.05f)  * 8.0f;
 }
 
 static Mat4 matPerspective(float fovRad, float aspect, float nearZ, float farZ) {
@@ -460,6 +461,8 @@ void World::updateParticles(float dt) {
     }
 }
 
+static bool checkCollision(const World& world, Vec3 pos);
+
 void World::updateEntities(float dt) {
     std::lock_guard lk(entityMtx);
     for (auto& e : entities) {
@@ -471,7 +474,6 @@ void World::updateEntities(float dt) {
             e.vel.y += GRAVITY * dt * 0.4f;
             uint8_t bCurrent = blockAt(flr(e.pos.x), flr(e.pos.y), flr(e.pos.z));
             if (bCurrent == WATER) {
-                // Suda Yüzme Efekti
                 e.vel.y = 0.8f;
                 e.vel.x *= 0.85f;
                 e.vel.z *= 0.85f;
@@ -480,16 +482,27 @@ void World::updateEntities(float dt) {
                 e.pos.y = flr(e.pos.y) + 0.15f;
             }
         } else {
-            e.pos.y += GRAVITY * dt * 0.3f;
-            uint8_t bBelow = blockAt(flr(e.pos.x), flr(e.pos.y - 0.1f), flr(e.pos.z));
-            if (bBelow != AIR && BD(bBelow).solid) e.pos.y = flr(e.pos.y) + 1.0f;
+            // Canavarlar/Hayvanlar için yerçekimi ve zemin kontrolü
+            e.vel.y += GRAVITY * dt;
+            Vec3 nextPos = e.pos;
+            nextPos.y += e.vel.y * dt;
+
+            if (checkCollision(*this, nextPos)) {
+                e.vel.y = 0;
+                e.pos.y = flr(e.pos.y) + 0.05f;
+            } else {
+                e.pos.y = nextPos.y;
+            }
 
             if (fmodf(e.animTime, 3.5f) < dt) {
                 e.yaw = static_cast<float>(rand() % 360);
             }
             float rad = e.yaw * 0.01745329f;
-            e.pos.x += -sinf(rad) * 0.8f * dt;
-            e.pos.z += -cosf(rad) * 0.8f * dt;
+            Vec3 stepMove = {sinf(rad) * 0.8f * dt, 0, -cosf(rad) * 0.8f * dt};
+            Vec3 testP = e.pos + stepMove;
+            if (!checkCollision(*this, testP)) {
+                e.pos = testP;
+            }
         }
     }
 }
@@ -561,7 +574,6 @@ void World::loadWorld(const std::string& path) {
     LOGI("Dunya yuklendi: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
-// Kaliteli Minecraft Doku Atlası
 void Renderer::generateProceduralAtlas() {
     const int AT_SZ = 64;
     std::vector<uint32_t> pixels(AT_SZ * AT_SZ);
@@ -576,72 +588,72 @@ void Renderer::generateProceduralAtlas() {
         for (int y = 0; y < 16; ++y) {
             for (int x = 0; x < 16; ++x) {
                 int noise = ((x * 7 + y * 13 + t * 19) % 24) - 12;
-                uint32_t c = 0xFF888888;
+                uint32_t c = makeRGBA(140, 140, 140);
                 switch(t) {
-                    case 0: // Grass Top (Zengin Doğa Yeşili)
-                        c = 0xFF000000 | ((75 + noise) << 16) | ((165 + noise) << 8) | (45 + noise);
+                    case 0: // Grass Top
+                        c = makeRGBA(85 + noise, 175 + noise, 50 + noise);
                         break;
                     case 1: // Grass Side
-                        if (y < 4) c = 0xFF000000 | ((75 + noise) << 16) | ((165 + noise) << 8) | (45 + noise);
-                        else c = 0xFF000000 | ((95 + noise) << 16) | ((68 + noise) << 8) | (45 + noise);
+                        if (y < 4) c = makeRGBA(85 + noise, 175 + noise, 50 + noise);
+                        else c = makeRGBA(115 + noise, 80 + noise, 50 + noise);
                         break;
                     case 2: // Dirt
-                        c = 0xFF000000 | ((105 + noise) << 16) | ((75 + noise) << 8) | (50 + noise);
+                        c = makeRGBA(115 + noise, 80 + noise, 50 + noise);
                         break;
                     case 3: // Stone
-                        c = 0xFF000000 | ((125 + noise) << 16) | ((125 + noise) << 8) | (125 + noise);
+                        c = makeRGBA(130 + noise, 130 + noise, 130 + noise);
                         break;
                     case 4: // Cobblestone
                         noise = ((x * 11 ^ y * 17) % 36) - 18;
-                        c = 0xFF000000 | ((105 + noise) << 16) | ((105 + noise) << 8) | (105 + noise);
+                        c = makeRGBA(110 + noise, 110 + noise, 110 + noise);
                         break;
                     case 5: // Planks
-                        c = 0xFF000000 | ((160 + (y%4==0?-25:noise)) << 16) | ((120 + noise) << 8) | (75 + noise);
+                        c = makeRGBA(170 + (y%4==0?-25:noise), 130 + noise, 75 + noise);
                         break;
-                    case 6: // Oak Log Side
-                        c = 0xFF000000 | ((105 + (x%4==0?-20:noise)) << 16) | ((75 + noise) << 8) | (45 + noise);
+                    case 6: // Oak Log Side (Kahverengi Ağaç Kabuğu)
+                        c = makeRGBA(105 + (x%4==0?-20:noise), 75 + noise, 45 + noise);
                         break;
-                    case 7: // Oak Log Top
-                        c = 0xFF000000 | ((145 + noise) << 16) | ((115 + noise) << 8) | (75 + noise);
+                    case 7: // Oak Log Top (Halka Desenli Açık Ahşap)
+                        c = makeRGBA(160 + noise, 125 + noise, 80 + noise);
                         break;
-                    case 8: // Oak Leaves (Moiré Izgarasız Dolgun Yaprak)
+                    case 8: // Oak Leaves (Kafessiz Zengin Yaprak)
                         if ((x%3==0 && y%3==0) && ((x+y)%4==0)) {
-                            c = 0x00000000;
+                            c = makeRGBA(0, 0, 0, 0);
                         } else {
                             int leafVar = ((x * 5 + y * 9) % 30) - 15;
-                            c = 0xFF000000 | ((25 + leafVar) << 16) | ((130 + leafVar) << 8) | (25 + leafVar);
+                            c = makeRGBA(30 + leafVar, 140 + leafVar, 30 + leafVar);
                         }
                         break;
                     case 9: // Diamond Ore
-                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = 0xFFE0D030;
-                        else c = 0xFF000000 | ((125 + noise) << 16) | ((125 + noise) << 8) | (125 + noise);
+                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = makeRGBA(45, 220, 220);
+                        else c = makeRGBA(130 + noise, 130 + noise, 130 + noise);
                         break;
                     case 10: // Coal Ore
-                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = 0xFF222222;
-                        else c = 0xFF000000 | ((125 + noise) << 16) | ((125 + noise) << 8) | (125 + noise);
+                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = makeRGBA(30, 30, 30);
+                        else c = makeRGBA(130 + noise, 130 + noise, 130 + noise);
                         break;
                     case 11: // Bedrock
                         noise = ((x * 31 + y * 47) % 60) - 30;
-                        c = 0xFF000000 | ((40 + noise) << 16) | ((40 + noise) << 8) | (40 + noise);
+                        c = makeRGBA(40 + noise, 40 + noise, 40 + noise);
                         break;
                     case 12: // Crafting Table
-                        c = 0xFF000000 | ((170 + noise) << 16) | ((130 + noise) << 8) | (80 + noise);
+                        c = makeRGBA(180 + noise, 135 + noise, 80 + noise);
                         break;
                     case 13: // Sand
-                        c = 0xFF000000 | ((220 + noise) << 16) | ((210 + noise) << 8) | (150 + noise);
+                        c = makeRGBA(225 + noise, 215 + noise, 155 + noise);
                         break;
-                    case 14: // Canlı Okyanus Suyu (#1B6EE8 Saydam)
-                        c = 0xCC000000 | ((27 + noise) << 16) | ((110 + noise) << 8) | (232 + noise);
+                    case 14: // Canlı Okyanus Suyu (Saydam Mavi)
+                        c = makeRGBA(27 + noise, 110 + noise, 232 + noise, 190);
                         break;
-                    case 15: // Çatlama Maskesi (Breaking Cracks)
-                        if ((x == y || x == (15 - y) || (x % 4 == 0 && y > 4)) && ((x + y) % 2 == 0)) {
-                            c = 0xD0101010;
+                    case 15: // Kırma Çatlağı Maskesi
+                        if ((x == y || x == (15 - y) || (x % 3 == 0 && y > 3)) && ((x + y) % 2 == 0)) {
+                            c = makeRGBA(20, 20, 20, 210);
                         } else {
-                            c = 0x00000000;
+                            c = makeRGBA(0, 0, 0, 0);
                         }
                         break;
                     default:
-                        c = 0xFF888888;
+                        c = makeRGBA(140, 140, 140);
                 }
                 putTilePixel(t, x, y, c);
             }
@@ -775,7 +787,6 @@ void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float y
     float radY = yaw * 0.01745329f;
     float radP = pitch * 0.01745329f;
     
-    // Scale & Rotation
     model.m[0]  = scale.x * cosf(radY); 
     model.m[2]  = scale.x * sinf(radY);
     model.m[5]  = scale.y * cosf(radP); 
@@ -796,8 +807,12 @@ void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float y
 
 void Renderer::drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress) {
     if (progress <= 0.0f) return;
+    
+    glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_FALSE);
+
     Mat4 model;
-    float expand = 1.01f;
+    float expand = 1.002f;
     model.m[0] = expand; model.m[5] = expand; model.m[10] = expand;
     model.m[12] = pos.x + 0.5f; model.m[13] = pos.y + 0.5f; model.m[14] = pos.z + 0.5f; model.m[15] = 1.0f;
     Mat4 mvp = vp * model;
@@ -811,12 +826,16 @@ void Renderer::drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress) {
     glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
+
+    glDepthMask(GL_TRUE);
+    glDepthFunc(GL_LESS);
 }
 
 void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
+    glDisable(GL_CULL_FACE);
     glUseProgram(skyProg);
     
-    // 1. Minecraft Güneşi
+    // Güneş
     Vec3 sunPos = playerPos + Vec3{80.0f, 120.0f, -80.0f};
     Mat4 model;
     model.m[0] = 24.0f; model.m[5] = 24.0f; model.m[10] = 24.0f;
@@ -828,14 +847,14 @@ void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
     glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    // 2. Hareketli Bulut Düzlemi (Y=85)
-    float cloudShift = fmodf(time * 2.0f, 64.0f);
+    // Sadece gökyüzü tavanında süzülen 3D bulutlar (Y=95)
+    float cloudShift = fmodf(time * 1.5f, 64.0f);
     int cx = flr(playerPos.x / 32.0f);
     int cz = flr(playerPos.z / 32.0f);
 
     for (int dx = -3; dx <= 3; ++dx) {
         for (int dz = -3; dz <= 3; ++dz) {
-            Vec3 cpos{(cx + dx) * 32.0f + cloudShift, 85.0f, (cz + dz) * 32.0f};
+            Vec3 cpos{(cx + dx) * 32.0f + cloudShift, 95.0f, (cz + dz) * 32.0f};
             Mat4 cm;
             cm.m[0] = 28.0f; cm.m[5] = 4.0f; cm.m[10] = 28.0f;
             cm.m[12] = cpos.x; cm.m[13] = cpos.y; cm.m[14] = cpos.z; cm.m[15] = 1.0f;
@@ -846,23 +865,21 @@ void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
         }
     }
     glBindVertexArray(0);
+    glEnable(GL_CULL_FACE);
 }
 
 void Renderer::drawMob(const Mat4& vp, const Entity& e) {
     float legAngle = sinf(e.animTime * 8.0f) * 25.0f;
+    float rad = e.yaw * 0.01745329f;
+
     if (e.type == ENT_PIG) {
         Vec3 pink{0.96f, 0.65f, 0.65f};
         Vec3 snoutCol{0.92f, 0.50f, 0.50f};
-        // Gövde
         drawBox(vp, e.pos + Vec3{0, 0.6f, 0}, {0.9f, 0.7f, 1.2f}, pink, e.yaw);
-        // Kafa
-        float rad = e.yaw * 0.01745329f;
-        Vec3 headOffset{-sinf(rad)*0.65f, 0.85f, -cosf(rad)*0.65f};
+        Vec3 headOffset{sinf(rad)*0.65f, 0.85f, -cosf(rad)*0.65f};
         drawBox(vp, e.pos + headOffset, {0.6f, 0.6f, 0.6f}, pink, e.yaw);
-        // Burun
-        Vec3 snoutOffset{-sinf(rad)*0.95f, 0.75f, -cosf(rad)*0.95f};
+        Vec3 snoutOffset{sinf(rad)*0.95f, 0.75f, -cosf(rad)*0.95f};
         drawBox(vp, e.pos + snoutOffset, {0.3f, 0.2f, 0.2f}, snoutCol, e.yaw);
-        // 4 Bacak
         drawBox(vp, e.pos + Vec3{-0.25f, 0.25f, -0.35f}, {0.25f, 0.5f, 0.25f}, pink, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.25f, 0.25f, -0.35f},  {0.25f, 0.5f, 0.25f}, pink, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{-0.25f, 0.25f, 0.35f},  {0.25f, 0.5f, 0.25f}, pink, e.yaw, -legAngle);
@@ -870,8 +887,7 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e) {
     } else if (e.type == ENT_COW) {
         Vec3 cowCol{0.40f, 0.25f, 0.15f};
         drawBox(vp, e.pos + Vec3{0, 0.8f, 0}, {1.0f, 1.0f, 1.4f}, cowCol, e.yaw);
-        float rad = e.yaw * 0.01745329f;
-        Vec3 headOffset{-sinf(rad)*0.75f, 1.1f, -cosf(rad)*0.75f};
+        Vec3 headOffset{sinf(rad)*0.75f, 1.1f, -cosf(rad)*0.75f};
         drawBox(vp, e.pos + headOffset, {0.6f, 0.6f, 0.6f}, cowCol, e.yaw);
         drawBox(vp, e.pos + Vec3{-0.3f, 0.3f, -0.4f}, {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.3f, 0.3f, -0.4f},  {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, -legAngle);
@@ -881,8 +897,7 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e) {
         Vec3 wool{0.92f, 0.92f, 0.92f};
         Vec3 headSkin{0.85f, 0.75f, 0.70f};
         drawBox(vp, e.pos + Vec3{0, 0.75f, 0}, {1.1f, 0.9f, 1.3f}, wool, e.yaw);
-        float rad = e.yaw * 0.01745329f;
-        Vec3 headOffset{-sinf(rad)*0.7f, 0.95f, -cosf(rad)*0.7f};
+        Vec3 headOffset{sinf(rad)*0.7f, 0.95f, -cosf(rad)*0.7f};
         drawBox(vp, e.pos + headOffset, {0.55f, 0.55f, 0.55f}, headSkin, e.yaw);
         drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, -0.38f}, {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.28f, 0.3f, -0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
@@ -907,10 +922,8 @@ void Renderer::frame(World& world, Player& player, float time) {
     Mat4 view = matLookAt(eye, eye + player.lookDir(), {0, 1, 0});
     Mat4 vp = proj * view;
 
-    // 1. Gökyüzü & Bulutlar
     drawSunAndClouds(vp, player.pos, time);
 
-    // 2. Voxel Dünya Meshleri
     glUseProgram(worldProg);
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, vp.m);
     glActiveTexture(GL_TEXTURE0);
@@ -928,18 +941,15 @@ void Renderer::frame(World& world, Player& player, float time) {
         }
     }
 
-    // 3. Blok Çatlama Animasyonu
     if (player.isBreaking && player.breakProgress > 0.0f) {
         drawBreakingOverlay(vp, player.breakingBlock, player.breakProgress);
     }
 
-    // 4. Moblar
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
         if (e.alive) drawMob(vp, e);
     }
 
-    // 5. Parçacıklar
     std::lock_guard plk(world.particleMtx);
     for (const auto& p : world.particles) {
         drawBox(vp, p.pos, {0.12f, 0.12f, 0.12f}, p.color);
@@ -1016,7 +1026,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->player.inv.slots[8] = ItemStack(TNT, 64);
 
     gState->initialized = true;
-    LOGI("Minecraft Motoru Hazir. Dogus: [0, %d, 0]", spawnY);
+    LOGI("Minecraft Motoru Başlatıldı. Doğuş: [0, %d, 0]", spawnY);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeResize(JNIEnv*, jclass, jint w, jint h) {
@@ -1033,22 +1043,21 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     float sdt = clampf(dt, 0.0f, 0.033f);
     gs.time += sdt;
 
-    // Su Durumu Kontrolü
     uint8_t bFeet = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y), flr(gs.player.pos.z));
     uint8_t bHead = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y + 1.2f), flr(gs.player.pos.z));
     gs.player.inWater = (bFeet == WATER || bHead == WATER);
 
-    // Düzeltilmiş D-Pad Hareket Yönü
     float yawRad = gs.player.yaw * (3.14159265f / 180.0f);
     float spd = gs.player.inWater ? WALK_SPD * 0.6f : WALK_SPD;
 
+    // Tam Minecraft yön vektörleri
     float fwd = gs.inputZ * spd;
     float str = gs.inputX * spd;
 
     Vec3 moveDir = {
-        -sinf(yawRad) * fwd + cosf(yawRad) * str,
+        sinf(yawRad) * fwd + cosf(yawRad) * str,
         0.0f,
-        -cosf(yawRad) * fwd - sinf(yawRad) * str
+        -cosf(yawRad) * fwd + sinf(yawRad) * str
     };
 
     gs.player.vel.x = moveDir.x;
@@ -1061,7 +1070,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.vel.y += GRAVITY * sdt;
     }
 
-    // AABB Çarpışma
     Vec3 p = gs.player.pos;
     p.x += gs.player.vel.x * sdt;
     if (checkCollision(*gs.world, p)) {
@@ -1088,7 +1096,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
-    // Blok Kırma İlerlemesi
     if (gs.player.isBreaking) {
         auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, gs.player.lookDir(), REACH);
         if (hit.hit) {
@@ -1098,7 +1105,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
                 gs.player.breakProgress += sdt / (hVal * 0.8f);
 
                 if (gs.player.breakProgress >= 1.0f) {
-                    // Blok Kırıldı
                     gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
                     gs.world->spawnBreakParticles({hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, targetB);
                     uint16_t drop = BD(targetB).dropId;
@@ -1119,7 +1125,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.breakProgress = 0.0f;
     }
 
-    // Eşya Toplama
     {
         std::lock_guard lk(gs.world->entityMtx);
         for (auto& e : gs.world->entities) {
@@ -1163,7 +1168,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jin
     if (!gState) return;
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, 1.62f, 0}, gState->player.lookDir(), REACH);
     if (type == 1 && hit.hit) {
-        // Blok Koy
         ItemStack& held = gState->player.inv.active();
         if (!held.empty() && held.id < BLOCK_COUNT) {
             Vec3i target = {hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z};
@@ -1180,7 +1184,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jin
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeJump(JNIEnv*, jclass) {
     if (!gState) return;
     if (gState->player.inWater) {
-        gState->player.vel.y = 4.5f; // Suda Yüzme
+        gState->player.vel.y = 4.5f;
     } else if (gState->player.onGround) {
         gState->player.vel.y = JUMP_VEL;
         gState->player.onGround = false;

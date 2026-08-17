@@ -30,8 +30,8 @@ static constexpr int CS        = 16;
 static constexpr int WH        = 128;
 static constexpr int RD        = 5;
 static constexpr int SEA_LEVEL = 32;
-static constexpr float GRAVITY = -24.0f;
-static constexpr float JUMP_VEL= 8.4f;
+static constexpr float GRAVITY = -26.0f;
+static constexpr float JUMP_VEL= 8.6f;
 static constexpr float WALK_SPD= 4.317f;
 static constexpr float SPRINT_SPD= 6.2f;
 static constexpr float REACH   = 5.5f;
@@ -204,14 +204,13 @@ struct Player {
     bool inWater = false;
     Inventory inv;
 
-    // Blok Kırma İşlemi
     bool isBreaking = false;
     Vec3i breakingBlock{-999, -999, -999};
     float breakProgress = 0.0f;
 
     Vec3 lookDir() const {
         float y2 = yaw * (3.14159265f / 180.0f), p = pitch * (3.14159265f / 180.0f);
-        return {-sinf(y2) * cosf(p), sinf(p), -cosf(y2) * cosf(p)};
+        return {sinf(y2) * cosf(p), sinf(p), -cosf(y2) * cosf(p)};
     }
 };
 
@@ -222,7 +221,6 @@ public:
     GLuint skyProg = 0;
     GLuint atlasTex = 0;
     GLuint boxVAO = 0, boxVBO = 0;
-    GLuint cloudVAO = 0, cloudVBO = 0;
     int screenW = 1920, screenH = 1080;
 
     void init(int w, int h);
@@ -230,8 +228,8 @@ public:
     void frame(World& world, Player& player, float time);
     void generateProceduralAtlas();
     void drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw = 0, float pitch = 0);
-    void drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress);
     void drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time);
+    void drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress);
     void drawMob(const Mat4& vp, const Entity& e);
 };
 

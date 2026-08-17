@@ -40,7 +40,7 @@ object CraftLogger {
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-            Log.e(TAG, "Fatal Crash: $sw")
+            Log.e(TAG, "Kritik Hata: $sw")
         }
     }
 
@@ -130,7 +130,6 @@ object BlockIconFactory {
             }
         }
 
-        // Üst Yüzey
         val topPath = Path().apply {
             moveTo(half, eighth)
             lineTo(size - eighth, quarter + eighth)
@@ -141,7 +140,6 @@ object BlockIconFactory {
         p.color = topCol
         c.drawPath(topPath, p)
 
-        // Sol Yüzey
         val leftPath = Path().apply {
             moveTo(eighth, quarter + eighth)
             lineTo(half, half + eighth)
@@ -152,7 +150,6 @@ object BlockIconFactory {
         p.color = sideLCol
         c.drawPath(leftPath, p)
 
-        // Sağ Yüzey
         val rightPath = Path().apply {
             moveTo(half, half + eighth)
             lineTo(size - eighth, quarter + eighth)
@@ -163,7 +160,6 @@ object BlockIconFactory {
         p.color = sideRCol
         c.drawPath(rightPath, p)
 
-        // Dış Piksel Çerçeve
         p.style = Paint.Style.STROKE
         p.strokeWidth = 2f
         p.color = Color.argb(120, 0, 0, 0)
@@ -176,7 +172,6 @@ object BlockIconFactory {
     }
 }
 
-// Vektörel Buton İkonları
 object VectorIconFactory {
     fun createBreakIcon(context: Context, size: Int = 110): Drawable {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
@@ -286,15 +281,15 @@ object Engine {
 
 class Activity : AndroidActivity() {
     private lateinit var glView: GLSurfaceView
-    private var lastTouchX = 0f
-    private var lastTouchY = 0f
-    private var isCamDragging = false
-    private var camPointerId = -1
 
-    private var moveFwd = false
-    private var moveBack = false
-    private var moveLeft = false
-    private var moveRight = false
+    // Çoklu Dokunmatik Durum Takipçileri
+    private var joyPointerId = -1
+    private var joyCenterX = 0f
+    private var joyCenterY = 0f
+
+    private var camPointerId = -1
+    private var lastCamX = 0f
+    private var lastCamY = 0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -340,16 +335,6 @@ class Activity : AndroidActivity() {
         }
     }
 
-    private fun updateMovement() {
-        var x = 0f
-        var z = 0f
-        if (moveFwd) z += 1.0f
-        if (moveBack) z -= 1.0f
-        if (moveLeft) x -= 1.0f
-        if (moveRight) x += 1.0f
-        Engine.nativeInput(x, z)
-    }
-
     private fun setupMCPEHUD(root: FrameLayout) {
         val hud = FrameLayout(this)
 
@@ -365,65 +350,19 @@ class Activity : AndroidActivity() {
         hud.addView(chV)
         hud.addView(chH)
 
-        // 2. Klasik D-Pad
-        val dpad = RelativeLayout(this).apply {
-            layoutParams = FrameLayout.LayoutParams(320, 320).apply {
+        // 2. Sol Dinamik Joystick Tabanı
+        val joyBase = View(this).apply {
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(80, 40, 40, 40))
+                setStroke(3, Color.argb(150, 200, 200, 200))
+            }
+            layoutParams = FrameLayout.LayoutParams(260, 260).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
-                setMargins(40, 0, 0, 40)
+                setMargins(60, 0, 0, 60)
             }
         }
-
-        fun createDpadBtn(symbol: String, rule: Int): Button {
-            return Button(this).apply {
-                text = symbol
-                textSize = 18f
-                setTextColor(Color.WHITE)
-                background = GradientDrawable().apply {
-                    setColor(Color.argb(120, 30, 30, 30))
-                    cornerRadius = 14f
-                    setStroke(2, Color.argb(140, 200, 200, 200))
-                }
-                layoutParams = RelativeLayout.LayoutParams(100, 100).apply {
-                    addRule(rule)
-                    if (rule == RelativeLayout.ALIGN_PARENT_TOP || rule == RelativeLayout.ALIGN_PARENT_BOTTOM) {
-                        addRule(RelativeLayout.CENTER_HORIZONTAL)
-                    } else {
-                        addRule(RelativeLayout.CENTER_VERTICAL)
-                    }
-                }
-            }
-        }
-
-        val btnUp = createDpadBtn("▲", RelativeLayout.ALIGN_PARENT_TOP).apply {
-            setOnTouchListener { _, e ->
-                moveFwd = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
-                updateMovement(); true
-            }
-        }
-        val btnDown = createDpadBtn("▼", RelativeLayout.ALIGN_PARENT_BOTTOM).apply {
-            setOnTouchListener { _, e ->
-                moveBack = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
-                updateMovement(); true
-            }
-        }
-        val btnLeft = createDpadBtn("◀", RelativeLayout.ALIGN_PARENT_START).apply {
-            setOnTouchListener { _, e ->
-                moveLeft = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
-                updateMovement(); true
-            }
-        }
-        val btnRight = createDpadBtn("▶", RelativeLayout.ALIGN_PARENT_END).apply {
-            setOnTouchListener { _, e ->
-                moveRight = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
-                updateMovement(); true
-            }
-        }
-
-        dpad.addView(btnUp)
-        dpad.addView(btnDown)
-        dpad.addView(btnLeft)
-        dpad.addView(btnRight)
-        hud.addView(dpad)
+        hud.addView(joyBase)
 
         // 3. Sağ Eylem Butonları
         val rightActionArea = LinearLayout(this).apply {
@@ -589,50 +528,77 @@ class Activity : AndroidActivity() {
         }
         hud.addView(pauseBtn)
 
-        // Dokunmatik Kamera
+        // Eşzamanlı Çoklu Dokunmatik Router (Multi-Touch Event Router)
         hud.setOnTouchListener { _, event ->
-            val pIdx = event.actionIndex
-            val pId = event.getPointerId(pIdx)
-            val x = event.getX(pIdx)
-            val y = event.getY(pIdx)
+            val pointerIndex = event.actionIndex
+            val pId = event.getPointerId(pointerIndex)
+            val x = event.getX(pointerIndex)
+            val y = event.getY(pointerIndex)
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (x > root.width * 0.35f && !isCamDragging) {
-                        isCamDragging = true
+                    if (x < root.width * 0.4f && joyPointerId == -1) {
+                        joyPointerId = pId
+                        joyCenterX = joyBase.x + joyBase.width / 2f
+                        joyCenterY = joyBase.y + joyBase.height / 2f
+                        handleJoystick(x, y)
+                    } else if (x >= root.width * 0.35f && camPointerId == -1) {
                         camPointerId = pId
-                        lastTouchX = x
-                        lastTouchY = y
+                        lastCamX = x
+                        lastCamY = y
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
                     for (i in 0 until event.pointerCount) {
-                        if (event.getPointerId(i) == camPointerId) {
-                            val px = event.getX(i)
-                            val py = event.getY(i)
-                            val dx = (px - lastTouchX) * 0.22f
-                            val dy = (py - lastTouchY) * 0.22f
-                            Engine.nativeCameraInput(dx, -dy)
-                            lastTouchX = px
-                            lastTouchY = py
+                        val currentId = event.getPointerId(i)
+                        val px = event.getX(i)
+                        val py = event.getY(i)
+
+                        if (currentId == joyPointerId) {
+                            handleJoystick(px, py)
+                        } else if (currentId == camPointerId) {
+                            val dx = (px - lastCamX) * 0.22f
+                            val dy = (py - lastCamY) * 0.22f
+                            // Sola kaydırınca sola, yukarı kaydırınca yukarı
+                            Engine.nativeCameraInput(dx, dy)
+                            lastCamX = px
+                            lastCamY = py
                         }
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                    if (pId == joyPointerId) {
+                        joyPointerId = -1
+                        Engine.nativeInput(0f, 0f)
+                    }
                     if (pId == camPointerId) {
-                        isCamDragging = false
                         camPointerId = -1
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    isCamDragging = false
+                    joyPointerId = -1
                     camPointerId = -1
+                    Engine.nativeInput(0f, 0f)
                 }
             }
             true
         }
 
         root.addView(hud)
+    }
+
+    private fun handleJoystick(touchX: Float, touchY: Float) {
+        var dx = touchX - joyCenterX
+        var dy = touchY - joyCenterY
+        val maxRadius = 130f
+        val dist = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
+
+        if (dist > maxRadius) {
+            dx = (dx / dist) * maxRadius
+            dy = (dy / dist) * maxRadius
+        }
+        // İleri basınca ileri (-dy), Sağa basınca sağa (+dx)
+        Engine.nativeInput(dx / maxRadius, -dy / maxRadius)
     }
 
     private fun showInventoryDialog() {
