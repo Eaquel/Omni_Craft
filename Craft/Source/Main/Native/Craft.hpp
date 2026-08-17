@@ -34,7 +34,6 @@ static constexpr float GRAVITY = -24.0f;
 static constexpr float JUMP_VEL= 8.4f;
 static constexpr float WALK_SPD= 4.317f;
 static constexpr float SPRINT_SPD= 6.2f;
-static constexpr float SNEAK_SPD= 1.3f;
 static constexpr float REACH   = 5.5f;
 static constexpr int INV_SIZE  = 36;
 static constexpr int HOTBAR_SZ = 9;
@@ -67,9 +66,7 @@ struct BlockDef {
     bool solid;
     bool transparent;
     bool fluid;
-    bool gravity;
     float hardness;
-    float friction;
     uint8_t topTile, sideTile, botTile;
     uint16_t dropId;
 };
@@ -90,7 +87,6 @@ struct Vec3i { int x, y, z; bool operator==(const Vec3i& o) const { return x==o.
 
 struct Mat4 {
     float m[16] = {0};
-    // OpenGL ES 3.2 uyumlu standart Sütun-Öncelikli (Column-Major) matris çarpımı
     Mat4 operator*(const Mat4& b) const {
         Mat4 res;
         for (int c = 0; c < 4; ++c) {
@@ -109,6 +105,14 @@ struct Vertex {
     float x, y, z;
     float u, v;
     float light;
+};
+
+struct Particle {
+    Vec3 pos;
+    Vec3 vel;
+    Vec3 color;
+    float life;
+    float maxLife;
 };
 
 struct ItemStack {
@@ -163,6 +167,8 @@ public:
     mutable std::shared_mutex chunkMtx;
     std::vector<Entity> entities;
     std::mutex entityMtx;
+    std::vector<Particle> particles;
+    std::mutex particleMtx;
     uint32_t nextEntityId = 1;
     std::string worldPath = "";
 
@@ -182,7 +188,9 @@ public:
     void loadWorld(const std::string& path);
     void spawnMob(EntityType type, Vec3 pos);
     void spawnItemDrop(uint16_t itemId, Vec3 pos, Vec3 vel);
+    void spawnBreakParticles(Vec3 pos, uint8_t blockId);
     void updateEntities(float dt);
+    void updateParticles(float dt);
 
     struct RayHit { bool hit; Vec3i block, face; float dist; };
     RayHit raycast(Vec3 origin, Vec3 dir, float maxD) const;
@@ -193,11 +201,17 @@ struct Player {
     float yaw = 0, pitch = 0;
     float eyeH = 1.62f;
     bool onGround = false;
-    bool sneaking = false, sprinting = false;
+    bool inWater = false;
     Inventory inv;
+
+    // Blok Kırma İşlemi
+    bool isBreaking = false;
+    Vec3i breakingBlock{-999, -999, -999};
+    float breakProgress = 0.0f;
+
     Vec3 lookDir() const {
         float y2 = yaw * (3.14159265f / 180.0f), p = pitch * (3.14159265f / 180.0f);
-        return {cosf(p) * sinf(-y2), sinf(p), cosf(p) * cosf(-y2)};
+        return {-sinf(y2) * cosf(p), sinf(p), -cosf(y2) * cosf(p)};
     }
 };
 
@@ -205,15 +219,20 @@ class Renderer {
 public:
     GLuint worldProg = 0;
     GLuint entityProg = 0;
+    GLuint skyProg = 0;
     GLuint atlasTex = 0;
-    GLuint entityVAO = 0, entityVBO = 0;
+    GLuint boxVAO = 0, boxVBO = 0;
+    GLuint cloudVAO = 0, cloudVBO = 0;
     int screenW = 1920, screenH = 1080;
 
     void init(int w, int h);
     void resize(int w, int h);
-    void frame(World& world, Player& player);
+    void frame(World& world, Player& player, float time);
     void generateProceduralAtlas();
-    void drawEntityBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw);
+    void drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw = 0, float pitch = 0);
+    void drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress);
+    void drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time);
+    void drawMob(const Mat4& vp, const Entity& e);
 };
 
 struct GameState {

@@ -17,72 +17,77 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     if (fd >= 0) {
         char buf[512];
         snprintf(buf, sizeof(buf),
-                 "=== OMNI CRAFT CRASH RAPORU ===\n"
-                 "Sinyal: %d\n"
-                 "Bellek: %p\n"
-                 "Zaman: %04d-%02d-%02d %02d:%02d:%02d\n",
+                 "=== OMNI CRAFT CRASH ===\n"
+                 "Signal: %d\n"
+                 "Address: %p\n"
+                 "Time: %04d-%02d-%02d %02d:%02d:%02d\n",
                  sig, info->si_addr,
                  timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
                  timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
         write(fd, buf, strlen(buf));
         close(fd);
     }
-    LOGE("Kritik motor hatasi: %s", filePath);
+    LOGE("Native crash logged to %s", filePath);
     _exit(1);
 }
 
+// 4x4 Atlas Yerleşimi
+// 0: Grass Top, 1: Grass Side, 2: Dirt, 3: Stone
+// 4: Cobble, 5: Planks, 6: Log Side, 7: Log Top
+// 8: Leaves, 9: Diamond Ore, 10: Coal Ore, 11: Bedrock
+// 12: Crafting Table, 13: Sand, 14: Water, 15: Breaking Crack
 static constexpr BlockDef BLOCK_TABLE[BLOCK_COUNT] = {
-    {"hava",        false, true,  false, false, 0.0f, 0.6f, 0,  0,  0,  AIR},
-    {"cimen",       true,  false, false, false, 0.6f, 0.6f, 0,  1,  2,  DIRT},
-    {"toprak",      true,  false, false, false, 0.5f, 0.6f, 2,  2,  2,  DIRT},
-    {"tas",         true,  false, false, false, 1.5f, 0.6f, 3,  3,  3,  COBBLESTONE},
-    {"kiriktas",    true,  false, false, false, 2.0f, 0.6f, 4,  4,  4,  COBBLESTONE},
-    {"kum",         true,  false, false, true,  0.5f, 0.4f, 13, 13, 13, SAND},
-    {"cakil",       true,  false, false, true,  0.6f, 0.4f, 4,  4,  4,  GRAVEL},
-    {"mese_kutuk",  true,  false, false, false, 2.0f, 0.6f, 7,  6,  7,  OAK_LOG},
-    {"mese_yaprak", true,  true,  false, false, 0.2f, 0.6f, 8,  8,  8,  AIR},
-    {"mese_tahta",  true,  false, false, false, 2.0f, 0.6f, 5,  5,  5,  OAK_PLANKS},
-    {"ny_kutuk",    true,  false, false, false, 2.0f, 0.6f, 7,  6,  7,  BIRCH_LOG},
-    {"ny_tahta",    true,  false, false, false, 2.0f, 0.6f, 5,  5,  5,  BIRCH_PLANKS},
-    {"ny_yaprak",   true,  true,  false, false, 0.2f, 0.6f, 8,  8,  8,  AIR},
-    {"cam_kutuk",   true,  false, false, false, 2.0f, 0.6f, 7,  6,  7,  SPRUCE_LOG},
-    {"cam_tahta",   true,  false, false, false, 2.0f, 0.6f, 5,  5,  5,  SPRUCE_PLANKS},
-    {"cam_yaprak",  true,  true,  false, false, 0.2f, 0.6f, 8,  8,  8,  AIR},
-    {"komur_cevh",  true,  false, false, false, 3.0f, 0.6f, 10, 10, 10, ITEM_COAL},
-    {"demir_cevh",  true,  false, false, false, 3.0f, 0.6f, 3,  3,  3,  IRON_ORE},
-    {"altin_cevh",  true,  false, false, false, 3.0f, 0.6f, 3,  3,  3,  GOLD_ORE},
-    {"elmas_cevh",  true,  false, false, false, 3.0f, 0.6f, 9,  9,  9,  ITEM_DIAMOND},
-    {"zumrut_cevh", true,  false, false, false, 3.0f, 0.6f, 3,  3,  3,  EMERALD_ORE},
-    {"kiziltas_cv", true,  false, false, false, 3.0f, 0.6f, 3,  3,  3,  REDSTONE_ORE},
-    {"lapis_cevh",  true,  false, false, false, 3.0f, 0.6f, 3,  3,  3,  LAPIS_ORE},
-    {"komur_blok",  true,  false, false, false, 5.0f, 0.6f, 10, 10, 10, COAL_BLOCK},
-    {"demir_blok",  true,  false, false, false, 5.0f, 0.6f, 3,  3,  3,  IRON_BLOCK},
-    {"altin_blok",  true,  false, false, false, 3.0f, 0.6f, 3,  3,  3,  GOLD_BLOCK},
-    {"elmas_blok",  true,  false, false, false, 5.0f, 0.6f, 9,  9,  9,  DIAMOND_BLOCK},
-    {"su",          false, true,  true,  false, 100.f,0.2f, 14, 14, 14, AIR},
-    {"lav",         false, true,  true,  false, 100.f,0.2f, 14, 14, 14, AIR},
-    {"cam",         true,  true,  false, false, 0.3f, 0.6f, 8,  8,  8,  AIR},
-    {"isiktasi",    true,  true,  false, false, 0.3f, 0.6f, 13, 13, 13, GLOWSTONE},
-    {"nether_tasi", true,  false, false, false, 0.4f, 0.6f, 4,  4,  4,  NETHERRACK},
-    {"uretim_masa", true,  false, false, false, 2.5f, 0.6f, 12, 12, 5,  CRAFTING_TABLE},
-    {"firin",       true,  false, false, false, 3.5f, 0.6f, 4,  4,  4,  FURNACE},
-    {"sandik",      true,  false, false, false, 2.5f, 0.6f, 5,  5,  5,  CHEST},
-    {"merdiven",    false, true,  false, false, 0.4f, 0.6f, 5,  5,  5,  LADDER},
-    {"mesale",      false, true,  false, false, 0.0f, 0.6f, 15, 15, 15, TORCH},
-    {"bedrock",     true,  false, false, false, -1.f, 0.6f, 11, 11, 11, BEDROCK},
-    {"kar_katmani", true,  false, false, false, 0.2f, 0.3f, 13, 13, 13, SNOW_LAYER},
-    {"buz",         true,  true,  false, false, 0.5f, 0.02f,14, 14, 14, AIR},
-    {"kil",         true,  false, false, false, 0.6f, 0.6f, 2,  2,  2,  CLAY},
-    {"tugla",       true,  false, false, false, 2.0f, 0.6f, 4,  4,  4,  BRICK},
-    {"tas_tugla",   true,  false, false, false, 1.5f, 0.6f, 3,  3,  3,  STONE_BRICKS},
-    {"yosun_tas",   true,  false, false, false, 2.0f, 0.6f, 4,  4,  4,  MOSSY_COBBLE},
-    {"tnt",         true,  false, false, false, 0.0f, 0.6f, 0,  1,  2,  TNT},
-    {"kitaplik",    true,  false, false, false, 1.5f, 0.6f, 5,  5,  5,  OAK_PLANKS},
-    {"balkabagi",   true,  false, false, false, 1.0f, 0.6f, 13, 13, 13, PUMPKIN},
-    {"karpuz",      true,  false, false, false, 1.0f, 0.6f, 0,  0,  0,  MELON},
-    {"kumtasi",     true,  false, false, false, 0.8f, 0.6f, 13, 13, 13, SANDSTONE},
-    {"kaktus",      true,  true,  false, false, 0.4f, 0.6f, 0,  0,  0,  CACTUS},
-    {"sunger",      true,  false, false, false, 0.6f, 0.6f, 13, 13, 13, SPONGE}
+    {"hava",        false, true,  false, 0.0f, 0,  0,  0,  AIR},
+    {"cimen",       true,  false, false, 0.6f, 0,  1,  2,  DIRT},
+    {"toprak",      true,  false, false, 0.5f, 2,  2,  2,  DIRT},
+    {"tas",         true,  false, false, 1.5f, 3,  3,  3,  COBBLESTONE},
+    {"kiriktas",    true,  false, false, 2.0f, 4,  4,  4,  COBBLESTONE},
+    {"kum",         true,  false, false, 0.5f, 13, 13, 13, SAND},
+    {"cakil",       true,  false, false, 0.6f, 4,  4,  4,  GRAVEL},
+    {"mese_kutuk",  true,  false, false, 2.0f, 7,  6,  7,  OAK_LOG},
+    {"mese_yaprak", true,  true,  false, 0.2f, 8,  8,  8,  AIR},
+    {"mese_tahta",  true,  false, false, 2.0f, 5,  5,  5,  OAK_PLANKS},
+    {"ny_kutuk",    true,  false, false, 2.0f, 7,  6,  7,  BIRCH_LOG},
+    {"ny_tahta",    true,  false, false, 2.0f, 5,  5,  5,  BIRCH_PLANKS},
+    {"ny_yaprak",   true,  true,  false, 0.2f, 8,  8,  8,  AIR},
+    {"cam_kutuk",   true,  false, false, 2.0f, 7,  6,  7,  SPRUCE_LOG},
+    {"cam_tahta",   true,  false, false, 2.0f, 5,  5,  5,  SPRUCE_PLANKS},
+    {"cam_yaprak",  true,  true,  false, 0.2f, 8,  8,  8,  AIR},
+    {"komur_cevh",  true,  false, false, 3.0f, 10, 10, 10, ITEM_COAL},
+    {"demir_cevh",  true,  false, false, 3.0f, 3,  3,  3,  IRON_ORE},
+    {"altin_cevh",  true,  false, false, 3.0f, 3,  3,  3,  GOLD_ORE},
+    {"elmas_cevh",  true,  false, false, 3.0f, 9,  9,  9,  ITEM_DIAMOND},
+    {"zumrut_cevh", true,  false, false, 3.0f, 3,  3,  3,  EMERALD_ORE},
+    {"kiziltas_cv", true,  false, false, 3.0f, 3,  3,  3,  REDSTONE_ORE},
+    {"lapis_cevh",  true,  false, false, 3.0f, 3,  3,  3,  LAPIS_ORE},
+    {"komur_blok",  true,  false, false, 5.0f, 10, 10, 10, COAL_BLOCK},
+    {"demir_blok",  true,  false, false, 5.0f, 3,  3,  3,  IRON_BLOCK},
+    {"altin_blok",  true,  false, false, 3.0f, 3,  3,  3,  GOLD_BLOCK},
+    {"elmas_blok",  true,  false, false, 5.0f, 9,  9,  9,  DIAMOND_BLOCK},
+    {"su",          false, true,  true,  100.f,14, 14, 14, AIR},
+    {"lav",         false, true,  true,  100.f,14, 14, 14, AIR},
+    {"cam",         true,  true,  false, 0.3f, 8,  8,  8,  AIR},
+    {"isiktasi",    true,  true,  false, 0.3f, 13, 13, 13, GLOWSTONE},
+    {"nether_tasi", true,  false, false, 0.4f, 4,  4,  4,  NETHERRACK},
+    {"uretim_masa", true,  false, false, 2.5f, 12, 12, 5,  CRAFTING_TABLE},
+    {"firin",       true,  false, false, 3.5f, 4,  4,  4,  FURNACE},
+    {"sandik",      true,  false, false, 2.5f, 5,  5,  5,  CHEST},
+    {"merdiven",    false, true,  false, 0.4f, 5,  5,  5,  LADDER},
+    {"mesale",      false, true,  false, 0.0f, 5,  5,  5,  TORCH},
+    {"bedrock",     true,  false, false, -1.f, 11, 11, 11, BEDROCK},
+    {"kar_katmani", true,  false, false, 0.2f, 13, 13, 13, SNOW_LAYER},
+    {"buz",         true,  true,  false, 0.5f, 14, 14, 14, AIR},
+    {"kil",         true,  false, false, 0.6f, 2,  2,  2,  CLAY},
+    {"tugla",       true,  false, false, 2.0f, 4,  4,  4,  BRICK},
+    {"tas_tugla",   true,  false, false, 1.5f, 3,  3,  3,  STONE_BRICKS},
+    {"yosun_tas",   true,  false, false, 2.0f, 4,  4,  4,  MOSSY_COBBLE},
+    {"tnt",         true,  false, false, 0.0f, 0,  1,  2,  TNT},
+    {"kitaplik",    true,  false, false, 1.5f, 5,  5,  5,  OAK_PLANKS},
+    {"balkabagi",   true,  false, false, 1.0f, 13, 13, 13, PUMPKIN},
+    {"karpuz",      true,  false, false, 1.0f, 0,  0,  0,  MELON},
+    {"kumtasi",     true,  false, false, 0.8f, 13, 13, 13, SANDSTONE},
+    {"kaktus",      true,  true,  false, 0.4f, 0,  0,  0,  CACTUS},
+    {"sunger",      true,  false, false, 0.6f, 13, 13, 13, SPONGE}
 };
 
 static inline const BlockDef& BD(uint8_t id) { return BLOCK_TABLE[id < BLOCK_COUNT ? id : 0]; }
@@ -100,24 +105,20 @@ static inline float smoothNoise(float x, float z) {
     float fx = x - ix, fz = z - iz;
     float ux = fx * fx * (3.0f - 2.0f * fx);
     float uz = fz * fz * (3.0f - 2.0f * fz);
-
     float v00 = hash2D(ix, iz);
     float v10 = hash2D(ix + 1, iz);
     float v01 = hash2D(ix, iz + 1);
     float v11 = hash2D(ix + 1, iz + 1);
-
     return (v00 * (1.0f - ux) + v10 * ux) * (1.0f - uz) +
            (v01 * (1.0f - ux) + v11 * ux) * uz;
 }
 
 static inline float getTerrainHeight(float x, float z) {
-    float h = 0.0f;
-    h += smoothNoise(x * 0.015f, z * 0.015f) * 18.0f;
-    h += smoothNoise(x * 0.05f,  z * 0.05f)  * 8.0f;
+    float h = smoothNoise(x * 0.015f, z * 0.015f) * 18.0f +
+              smoothNoise(x * 0.05f,  z * 0.05f)  * 8.0f;
     return 30.0f + h;
 }
 
-// Standart OpenGL ES 3.2 Projeksiyon Matrisi (Column-Major)
 static Mat4 matPerspective(float fovRad, float aspect, float nearZ, float farZ) {
     Mat4 res;
     float f = 1.0f / tanf(fovRad * 0.5f);
@@ -130,28 +131,15 @@ static Mat4 matPerspective(float fovRad, float aspect, float nearZ, float farZ) 
     return res;
 }
 
-// Standart OpenGL ES 3.2 Görünüm Matrisi (Column-Major)
 static Mat4 matLookAt(Vec3 eye, Vec3 center, Vec3 up) {
     Vec3 f = (center - eye).norm();
     Vec3 r = f.cross(up).norm();
     Vec3 u = r.cross(f);
 
     Mat4 res;
-    res.m[0] = r.x;
-    res.m[1] = u.x;
-    res.m[2] = -f.x;
-    res.m[3] = 0.0f;
-
-    res.m[4] = r.y;
-    res.m[5] = u.y;
-    res.m[6] = -f.y;
-    res.m[7] = 0.0f;
-
-    res.m[8] = r.z;
-    res.m[9] = u.z;
-    res.m[10] = -f.z;
-    res.m[11] = 0.0f;
-
+    res.m[0] = r.x; res.m[1] = u.x; res.m[2] = -f.x;
+    res.m[4] = r.y; res.m[5] = u.y; res.m[6] = -f.y;
+    res.m[8] = r.z; res.m[9] = u.z; res.m[10]= -f.z;
     res.m[12] = -(r.x * eye.x + r.y * eye.y + r.z * eye.z);
     res.m[13] = -(u.x * eye.x + u.y * eye.y + u.z * eye.z);
     res.m[14] =  (f.x * eye.x + f.y * eye.y + f.z * eye.z);
@@ -216,12 +204,10 @@ void Chunk::buildMesh(const World& world) {
         float ty = (tile / 4) * 0.25f;
         float tw = 0.25f;
 
-        // Tri 1: (0, 1, 2)
         verts.push_back({x0, y0, z0, tx,      ty+tw, light});
         verts.push_back({x1, y1, z1, tx+tw,   ty+tw, light});
         verts.push_back({x2, y2, z2, tx+tw,   ty,    light});
 
-        // Tri 2: (0, 2, 3)
         verts.push_back({x0, y0, z0, tx,      ty+tw, light});
         verts.push_back({x2, y2, z2, tx+tw,   ty,    light});
         verts.push_back({x3, y3, z3, tx,      ty,    light});
@@ -237,59 +223,47 @@ void Chunk::buildMesh(const World& world) {
                 float wy = static_cast<float>(y);
                 float wz = static_cast<float>(cz * CS + z);
 
-                // +Y (Üst Yüzey - CCW)
+                // +Y
                 uint8_t bTop = getBlock(x, y + 1, z);
                 if (!BD(bTop).solid || (bTop == WATER && id != WATER)) {
                     addQuad(BD(id).topTile, 1.0f,
-                            wx+0, wy+1, wz+0,
-                            wx+0, wy+1, wz+1,
-                            wx+1, wy+1, wz+1,
-                            wx+1, wy+1, wz+0);
+                            wx+0, wy+1, wz+0, wx+0, wy+1, wz+1,
+                            wx+1, wy+1, wz+1, wx+1, wy+1, wz+0);
                 }
-                // -Y (Alt Yüzey - CCW)
+                // -Y
                 uint8_t bBot = getBlock(x, y - 1, z);
                 if (!BD(bBot).solid) {
                     addQuad(BD(id).botTile, 0.5f,
-                            wx+0, wy+0, wz+1,
-                            wx+0, wy+0, wz+0,
-                            wx+1, wy+0, wz+0,
-                            wx+1, wy+0, wz+1);
+                            wx+0, wy+0, wz+1, wx+0, wy+0, wz+0,
+                            wx+1, wy+0, wz+0, wx+1, wy+0, wz+1);
                 }
-                // +Z (Ön Yüzey - CCW)
+                // +Z
                 uint8_t bFwd = getBlock(x, y, z + 1);
                 if (!BD(bFwd).solid) {
                     addQuad(BD(id).sideTile, 0.85f,
-                            wx+0, wy+0, wz+1,
-                            wx+1, wy+0, wz+1,
-                            wx+1, wy+1, wz+1,
-                            wx+0, wy+1, wz+1);
+                            wx+0, wy+0, wz+1, wx+1, wy+0, wz+1,
+                            wx+1, wy+1, wz+1, wx+0, wy+1, wz+1);
                 }
-                // -Z (Arka Yüzey - CCW)
+                // -Z
                 uint8_t bBack = getBlock(x, y, z - 1);
                 if (!BD(bBack).solid) {
                     addQuad(BD(id).sideTile, 0.85f,
-                            wx+1, wy+0, wz+0,
-                            wx+0, wy+0, wz+0,
-                            wx+0, wy+1, wz+0,
-                            wx+1, wy+1, wz+0);
+                            wx+1, wy+0, wz+0, wx+0, wy+0, wz+0,
+                            wx+0, wy+1, wz+0, wx+1, wy+1, wz+0);
                 }
-                // +X (Sağ Yüzey - CCW)
+                // +X
                 uint8_t bRight = getBlock(x + 1, y, z);
                 if (!BD(bRight).solid) {
                     addQuad(BD(id).sideTile, 0.70f,
-                            wx+1, wy+0, wz+1,
-                            wx+1, wy+0, wz+0,
-                            wx+1, wy+1, wz+0,
-                            wx+1, wy+1, wz+1);
+                            wx+1, wy+0, wz+1, wx+1, wy+0, wz+0,
+                            wx+1, wy+1, wz+0, wx+1, wy+1, wz+1);
                 }
-                // -X (Sol Yüzey - CCW)
+                // -X
                 uint8_t bLeft = getBlock(x - 1, y, z);
                 if (!BD(bLeft).solid) {
                     addQuad(BD(id).sideTile, 0.70f,
-                            wx+0, wy+0, wz+0,
-                            wx+0, wy+0, wz+1,
-                            wx+0, wy+1, wz+1,
-                            wx+0, wy+1, wz+0);
+                            wx+0, wy+0, wz+0, wx+0, wy+0, wz+1,
+                            wx+0, wy+1, wz+1, wx+0, wy+1, wz+0);
                 }
             }
         }
@@ -391,6 +365,7 @@ void World::generateChunk(Chunk& c) {
         if (h > SEA_LEVEL) {
             spawnMob(ENT_PIG, {(float)bx + 8, (float)h + 1.2f, (float)bz + 8});
             spawnMob(ENT_COW, {(float)bx + 4, (float)h + 1.2f, (float)bz + 4});
+            spawnMob(ENT_SHEEP, {(float)bx + 12, (float)h + 1.2f, (float)bz + 12});
         }
     }
 
@@ -450,6 +425,41 @@ void World::spawnItemDrop(uint16_t itemId, Vec3 pos, Vec3 vel) {
     entities.push_back(e);
 }
 
+void World::spawnBreakParticles(Vec3 pos, uint8_t blockId) {
+    std::lock_guard lk(particleMtx);
+    Vec3 col{0.5f, 0.5f, 0.5f};
+    if (blockId == DIRT || blockId == GRASS) col = {0.45f, 0.30f, 0.18f};
+    else if (blockId == STONE || blockId == COBBLESTONE) col = {0.55f, 0.55f, 0.55f};
+    else if (blockId == OAK_PLANKS || blockId == OAK_LOG) col = {0.65f, 0.48f, 0.28f};
+    else if (blockId == OAK_LEAVES) col = {0.20f, 0.55f, 0.15f};
+    else if (blockId == DIAMOND_ORE) col = {0.20f, 0.85f, 0.85f};
+
+    for (int i = 0; i < 8; ++i) {
+        Particle p;
+        p.pos = pos + Vec3{((rand()%100)/100.f - 0.5f)*0.6f, ((rand()%100)/100.f - 0.5f)*0.6f, ((rand()%100)/100.f - 0.5f)*0.6f};
+        p.vel = Vec3{((rand()%100)/100.f - 0.5f)*3.0f, ((rand()%100)/100.f)*3.5f + 1.0f, ((rand()%100)/100.f - 0.5f)*3.0f};
+        p.color = col;
+        p.life = 0.0f;
+        p.maxLife = 0.6f + ((rand()%100)/100.f) * 0.4f;
+        particles.push_back(p);
+    }
+}
+
+void World::updateParticles(float dt) {
+    std::lock_guard lk(particleMtx);
+    for (size_t i = 0; i < particles.size();) {
+        particles[i].life += dt;
+        if (particles[i].life >= particles[i].maxLife) {
+            particles[i] = particles.back();
+            particles.pop_back();
+        } else {
+            particles[i].pos += particles[i].vel * dt;
+            particles[i].vel.y += GRAVITY * dt * 0.8f;
+            ++i;
+        }
+    }
+}
+
 void World::updateEntities(float dt) {
     std::lock_guard lk(entityMtx);
     for (auto& e : entities) {
@@ -458,22 +468,28 @@ void World::updateEntities(float dt) {
 
         if (e.type == ENT_ITEM_DROP) {
             e.pos += e.vel * dt;
-            e.vel.y += GRAVITY * dt * 0.5f;
-            if (blockAt(flr(e.pos.x), flr(e.pos.y), flr(e.pos.z)) != AIR) {
+            e.vel.y += GRAVITY * dt * 0.4f;
+            uint8_t bCurrent = blockAt(flr(e.pos.x), flr(e.pos.y), flr(e.pos.z));
+            if (bCurrent == WATER) {
+                // Suda Yüzme Efekti
+                e.vel.y = 0.8f;
+                e.vel.x *= 0.85f;
+                e.vel.z *= 0.85f;
+            } else if (blockAt(flr(e.pos.x), flr(e.pos.y - 0.1f), flr(e.pos.z)) != AIR) {
                 e.vel = {0, 0, 0};
-                e.pos.y = flr(e.pos.y) + 1.05f;
+                e.pos.y = flr(e.pos.y) + 0.15f;
             }
         } else {
             e.pos.y += GRAVITY * dt * 0.3f;
-            uint8_t bBelow = blockAt(flr(e.pos.x), flr(e.pos.y - 0.2f), flr(e.pos.z));
+            uint8_t bBelow = blockAt(flr(e.pos.x), flr(e.pos.y - 0.1f), flr(e.pos.z));
             if (bBelow != AIR && BD(bBelow).solid) e.pos.y = flr(e.pos.y) + 1.0f;
 
-            if (fmodf(e.animTime, 4.0f) < dt) {
+            if (fmodf(e.animTime, 3.5f) < dt) {
                 e.yaw = static_cast<float>(rand() % 360);
             }
             float rad = e.yaw * 0.01745329f;
-            e.pos.x += sinf(rad) * 0.7f * dt;
-            e.pos.z += cosf(rad) * 0.7f * dt;
+            e.pos.x += -sinf(rad) * 0.8f * dt;
+            e.pos.z += -cosf(rad) * 0.8f * dt;
         }
     }
 }
@@ -545,6 +561,7 @@ void World::loadWorld(const std::string& path) {
     LOGI("Dunya yuklendi: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
+// Kaliteli Minecraft Doku Atlası
 void Renderer::generateProceduralAtlas() {
     const int AT_SZ = 64;
     std::vector<uint32_t> pixels(AT_SZ * AT_SZ);
@@ -558,63 +575,70 @@ void Renderer::generateProceduralAtlas() {
     for (int t = 0; t < 16; ++t) {
         for (int y = 0; y < 16; ++y) {
             for (int x = 0; x < 16; ++x) {
-                int noise = ((x * 7 + y * 13 + t * 19) % 20) - 10;
+                int noise = ((x * 7 + y * 13 + t * 19) % 24) - 12;
                 uint32_t c = 0xFF888888;
                 switch(t) {
-                    case 0: // Grass Top
-                        c = 0xFF000000 | ((70 + noise) << 16) | ((160 + noise) << 8) | (40 + noise);
+                    case 0: // Grass Top (Zengin Doğa Yeşili)
+                        c = 0xFF000000 | ((75 + noise) << 16) | ((165 + noise) << 8) | (45 + noise);
                         break;
                     case 1: // Grass Side
-                        if (y < 4) c = 0xFF000000 | ((70 + noise) << 16) | ((160 + noise) << 8) | (40 + noise);
-                        else c = 0xFF000000 | ((90 + noise) << 16) | ((60 + noise) << 8) | (40 + noise);
+                        if (y < 4) c = 0xFF000000 | ((75 + noise) << 16) | ((165 + noise) << 8) | (45 + noise);
+                        else c = 0xFF000000 | ((95 + noise) << 16) | ((68 + noise) << 8) | (45 + noise);
                         break;
                     case 2: // Dirt
-                        c = 0xFF000000 | ((90 + noise) << 16) | ((60 + noise) << 8) | (40 + noise);
+                        c = 0xFF000000 | ((105 + noise) << 16) | ((75 + noise) << 8) | (50 + noise);
                         break;
                     case 3: // Stone
-                        c = 0xFF000000 | ((115 + noise) << 16) | ((115 + noise) << 8) | (115 + noise);
+                        c = 0xFF000000 | ((125 + noise) << 16) | ((125 + noise) << 8) | (125 + noise);
                         break;
                     case 4: // Cobblestone
-                        noise = ((x * 11 ^ y * 17) % 35) - 17;
-                        c = 0xFF000000 | ((100 + noise) << 16) | ((100 + noise) << 8) | (100 + noise);
+                        noise = ((x * 11 ^ y * 17) % 36) - 18;
+                        c = 0xFF000000 | ((105 + noise) << 16) | ((105 + noise) << 8) | (105 + noise);
                         break;
                     case 5: // Planks
-                        c = 0xFF000000 | ((150 + (y%4==0?-25:noise)) << 16) | ((110 + noise) << 8) | (65 + noise);
+                        c = 0xFF000000 | ((160 + (y%4==0?-25:noise)) << 16) | ((120 + noise) << 8) | (75 + noise);
                         break;
                     case 6: // Oak Log Side
-                        c = 0xFF000000 | ((95 + (x%4==0?-20:noise)) << 16) | ((65 + noise) << 8) | (35 + noise);
+                        c = 0xFF000000 | ((105 + (x%4==0?-20:noise)) << 16) | ((75 + noise) << 8) | (45 + noise);
                         break;
                     case 7: // Oak Log Top
-                        c = 0xFF000000 | ((140 + noise) << 16) | ((110 + noise) << 8) | (70 + noise);
+                        c = 0xFF000000 | ((145 + noise) << 16) | ((115 + noise) << 8) | (75 + noise);
                         break;
-                    case 8: // Leaves
-                        c = ((x + y) % 2 == 0) ? 0x00000000 : (0xFF000000 | ((20 + noise) << 16) | ((120 + noise) << 8) | (20 + noise));
+                    case 8: // Oak Leaves (Moiré Izgarasız Dolgun Yaprak)
+                        if ((x%3==0 && y%3==0) && ((x+y)%4==0)) {
+                            c = 0x00000000;
+                        } else {
+                            int leafVar = ((x * 5 + y * 9) % 30) - 15;
+                            c = 0xFF000000 | ((25 + leafVar) << 16) | ((130 + leafVar) << 8) | (25 + leafVar);
+                        }
                         break;
                     case 9: // Diamond Ore
-                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > 0)) c = 0xFFE0D030;
-                        else c = 0xFF000000 | ((115 + noise) << 16) | ((115 + noise) << 8) | (115 + noise);
+                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = 0xFFE0D030;
+                        else c = 0xFF000000 | ((125 + noise) << 16) | ((125 + noise) << 8) | (125 + noise);
                         break;
                     case 10: // Coal Ore
-                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > 0)) c = 0xFF222222;
-                        else c = 0xFF000000 | ((115 + noise) << 16) | ((115 + noise) << 8) | (115 + noise);
+                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = 0xFF222222;
+                        else c = 0xFF000000 | ((125 + noise) << 16) | ((125 + noise) << 8) | (125 + noise);
                         break;
                     case 11: // Bedrock
                         noise = ((x * 31 + y * 47) % 60) - 30;
                         c = 0xFF000000 | ((40 + noise) << 16) | ((40 + noise) << 8) | (40 + noise);
                         break;
                     case 12: // Crafting Table
-                        c = 0xFF000000 | ((160 + noise) << 16) | ((120 + noise) << 8) | (70 + noise);
+                        c = 0xFF000000 | ((170 + noise) << 16) | ((130 + noise) << 8) | (80 + noise);
                         break;
                     case 13: // Sand
-                        c = 0xFF000000 | ((215 + noise) << 16) | ((205 + noise) << 8) | (145 + noise);
+                        c = 0xFF000000 | ((220 + noise) << 16) | ((210 + noise) << 8) | (150 + noise);
                         break;
-                    case 14: // Water
-                        c = 0xBB000000 | ((40 + noise) << 16) | ((80 + noise) << 8) | (210 + noise);
+                    case 14: // Canlı Okyanus Suyu (#1B6EE8 Saydam)
+                        c = 0xCC000000 | ((27 + noise) << 16) | ((110 + noise) << 8) | (232 + noise);
                         break;
-                    case 15: // Torch
-                        if (x>=6 && x<=9 && y>=4 && y<=15) c = 0xFF000000 | (120<<16) | (80<<8) | 40;
-                        else if (x>=6 && x<=9 && y<=3) c = 0xFF00FFFF;
-                        else c = 0x00000000;
+                    case 15: // Çatlama Maskesi (Breaking Cracks)
+                        if ((x == y || x == (15 - y) || (x % 4 == 0 && y > 4)) && ((x + y) % 2 == 0)) {
+                            c = 0xD0101010;
+                        } else {
+                            c = 0x00000000;
+                        }
                         break;
                     default:
                         c = 0xFF888888;
@@ -633,7 +657,7 @@ void Renderer::generateProceduralAtlas() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 }
 
-static const float ENTITY_BOX_VERTS[] = {
+static const float UNIT_BOX_VERTS[] = {
     -0.5f,-0.5f,-0.5f, 0,0,-1,  0.5f,-0.5f,-0.5f, 0,0,-1,  0.5f, 0.5f,-0.5f, 0,0,-1,
      0.5f, 0.5f,-0.5f, 0,0,-1, -0.5f, 0.5f,-0.5f, 0,0,-1, -0.5f,-0.5f,-0.5f, 0,0,-1,
     -0.5f,-0.5f, 0.5f, 0,0, 1,  0.5f,-0.5f, 0.5f, 0,0, 1,  0.5f, 0.5f, 0.5f, 0,0, 1,
@@ -693,6 +717,21 @@ void main(){
     FragColor = vec4(uColor * light, 1.0);
 })";
 
+static const char* VS_SKY = R"(#version 300 es
+layout(location=0) in vec3 aPos;
+uniform mat4 uMVP;
+void main(){
+    gl_Position = uMVP * vec4(aPos, 1.0);
+})";
+
+static const char* FS_SKY = R"(#version 300 es
+precision mediump float;
+uniform vec4 uSkyColor;
+out vec4 FragColor;
+void main(){
+    FragColor = uSkyColor;
+})";
+
 static GLuint compileShader(const char* vs, const char* fs) {
     GLuint v = glCreateShader(GL_VERTEX_SHADER); glShaderSource(v,1,&vs,nullptr); glCompileShader(v);
     GLuint f = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(f,1,&fs,nullptr); glCompileShader(f);
@@ -705,13 +744,14 @@ void Renderer::init(int w, int h) {
     screenW = w; screenH = h;
     worldProg = compileShader(VS_WORLD, FS_WORLD);
     entityProg = compileShader(VS_ENTITY, FS_ENTITY);
+    skyProg = compileShader(VS_SKY, FS_SKY);
     generateProceduralAtlas();
 
-    glGenVertexArrays(1, &entityVAO);
-    glGenBuffers(1, &entityVBO);
-    glBindVertexArray(entityVAO);
-    glBindBuffer(GL_ARRAY_BUFFER, entityVBO);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(ENTITY_BOX_VERTS), ENTITY_BOX_VERTS, GL_STATIC_DRAW);
+    glGenVertexArrays(1, &boxVAO);
+    glGenBuffers(1, &boxVBO);
+    glBindVertexArray(boxVAO);
+    glBindBuffer(GL_ARRAY_BUFFER, boxVBO);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(UNIT_BOX_VERTS), UNIT_BOX_VERTS, GL_STATIC_DRAW);
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 24, (void*)0);
     glEnableVertexAttribArray(1);
@@ -730,12 +770,18 @@ void Renderer::resize(int w, int h) {
     glViewport(0, 0, w, h);
 }
 
-void Renderer::drawEntityBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw) {
+void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw, float pitch) {
     Mat4 model;
-    float rad = yaw * 0.01745329f;
-    model.m[0]  = scale.x * cosf(rad); model.m[2]  = scale.x * sinf(rad);
-    model.m[5]  = scale.y;
-    model.m[8]  = scale.z * -sinf(rad);model.m[10] = scale.z * cosf(rad);
+    float radY = yaw * 0.01745329f;
+    float radP = pitch * 0.01745329f;
+    
+    // Scale & Rotation
+    model.m[0]  = scale.x * cosf(radY); 
+    model.m[2]  = scale.x * sinf(radY);
+    model.m[5]  = scale.y * cosf(radP); 
+    model.m[6]  = scale.y * sinf(radP);
+    model.m[8]  = scale.z * -sinf(radY);
+    model.m[10] = scale.z * cosf(radY);
     model.m[12] = pos.x; model.m[13] = pos.y; model.m[14] = pos.z; model.m[15] = 1.0f;
     Mat4 mvp = vp * model;
 
@@ -743,13 +789,117 @@ void Renderer::drawEntityBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, f
     glUniformMatrix4fv(glGetUniformLocation(entityProg, "uMVP"), 1, GL_FALSE, mvp.m);
     glUniform3f(glGetUniformLocation(entityProg, "uColor"), color.x, color.y, color.z);
 
-    glBindVertexArray(entityVAO);
+    glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
 }
 
-void Renderer::frame(World& world, Player& player) {
-    glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
+void Renderer::drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress) {
+    if (progress <= 0.0f) return;
+    Mat4 model;
+    float expand = 1.01f;
+    model.m[0] = expand; model.m[5] = expand; model.m[10] = expand;
+    model.m[12] = pos.x + 0.5f; model.m[13] = pos.y + 0.5f; model.m[14] = pos.z + 0.5f; model.m[15] = 1.0f;
+    Mat4 mvp = vp * model;
+
+    glUseProgram(worldProg);
+    glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, mvp.m);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, atlasTex);
+    glUniform1i(glGetUniformLocation(worldProg, "uTexture"), 0);
+
+    glBindVertexArray(boxVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
+}
+
+void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
+    glUseProgram(skyProg);
+    
+    // 1. Minecraft Güneşi
+    Vec3 sunPos = playerPos + Vec3{80.0f, 120.0f, -80.0f};
+    Mat4 model;
+    model.m[0] = 24.0f; model.m[5] = 24.0f; model.m[10] = 24.0f;
+    model.m[12] = sunPos.x; model.m[13] = sunPos.y; model.m[14] = sunPos.z; model.m[15] = 1.0f;
+    Mat4 mvp = vp * model;
+    glUniformMatrix4fv(glGetUniformLocation(skyProg, "uMVP"), 1, GL_FALSE, mvp.m);
+    glUniform4f(glGetUniformLocation(skyProg, "uSkyColor"), 1.0f, 1.0f, 0.85f, 1.0f);
+
+    glBindVertexArray(boxVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    // 2. Hareketli Bulut Düzlemi (Y=85)
+    float cloudShift = fmodf(time * 2.0f, 64.0f);
+    int cx = flr(playerPos.x / 32.0f);
+    int cz = flr(playerPos.z / 32.0f);
+
+    for (int dx = -3; dx <= 3; ++dx) {
+        for (int dz = -3; dz <= 3; ++dz) {
+            Vec3 cpos{(cx + dx) * 32.0f + cloudShift, 85.0f, (cz + dz) * 32.0f};
+            Mat4 cm;
+            cm.m[0] = 28.0f; cm.m[5] = 4.0f; cm.m[10] = 28.0f;
+            cm.m[12] = cpos.x; cm.m[13] = cpos.y; cm.m[14] = cpos.z; cm.m[15] = 1.0f;
+            Mat4 cmvp = vp * cm;
+            glUniformMatrix4fv(glGetUniformLocation(skyProg, "uMVP"), 1, GL_FALSE, cmvp.m);
+            glUniform4f(glGetUniformLocation(skyProg, "uSkyColor"), 1.0f, 1.0f, 1.0f, 0.75f);
+            glDrawArrays(GL_TRIANGLES, 0, 36);
+        }
+    }
+    glBindVertexArray(0);
+}
+
+void Renderer::drawMob(const Mat4& vp, const Entity& e) {
+    float legAngle = sinf(e.animTime * 8.0f) * 25.0f;
+    if (e.type == ENT_PIG) {
+        Vec3 pink{0.96f, 0.65f, 0.65f};
+        Vec3 snoutCol{0.92f, 0.50f, 0.50f};
+        // Gövde
+        drawBox(vp, e.pos + Vec3{0, 0.6f, 0}, {0.9f, 0.7f, 1.2f}, pink, e.yaw);
+        // Kafa
+        float rad = e.yaw * 0.01745329f;
+        Vec3 headOffset{-sinf(rad)*0.65f, 0.85f, -cosf(rad)*0.65f};
+        drawBox(vp, e.pos + headOffset, {0.6f, 0.6f, 0.6f}, pink, e.yaw);
+        // Burun
+        Vec3 snoutOffset{-sinf(rad)*0.95f, 0.75f, -cosf(rad)*0.95f};
+        drawBox(vp, e.pos + snoutOffset, {0.3f, 0.2f, 0.2f}, snoutCol, e.yaw);
+        // 4 Bacak
+        drawBox(vp, e.pos + Vec3{-0.25f, 0.25f, -0.35f}, {0.25f, 0.5f, 0.25f}, pink, e.yaw, legAngle);
+        drawBox(vp, e.pos + Vec3{0.25f, 0.25f, -0.35f},  {0.25f, 0.5f, 0.25f}, pink, e.yaw, -legAngle);
+        drawBox(vp, e.pos + Vec3{-0.25f, 0.25f, 0.35f},  {0.25f, 0.5f, 0.25f}, pink, e.yaw, -legAngle);
+        drawBox(vp, e.pos + Vec3{0.25f, 0.25f, 0.35f},   {0.25f, 0.5f, 0.25f}, pink, e.yaw, legAngle);
+    } else if (e.type == ENT_COW) {
+        Vec3 cowCol{0.40f, 0.25f, 0.15f};
+        drawBox(vp, e.pos + Vec3{0, 0.8f, 0}, {1.0f, 1.0f, 1.4f}, cowCol, e.yaw);
+        float rad = e.yaw * 0.01745329f;
+        Vec3 headOffset{-sinf(rad)*0.75f, 1.1f, -cosf(rad)*0.75f};
+        drawBox(vp, e.pos + headOffset, {0.6f, 0.6f, 0.6f}, cowCol, e.yaw);
+        drawBox(vp, e.pos + Vec3{-0.3f, 0.3f, -0.4f}, {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, legAngle);
+        drawBox(vp, e.pos + Vec3{0.3f, 0.3f, -0.4f},  {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, -legAngle);
+        drawBox(vp, e.pos + Vec3{-0.3f, 0.3f, 0.4f},  {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, -legAngle);
+        drawBox(vp, e.pos + Vec3{0.3f, 0.3f, 0.4f},   {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, legAngle);
+    } else if (e.type == ENT_SHEEP) {
+        Vec3 wool{0.92f, 0.92f, 0.92f};
+        Vec3 headSkin{0.85f, 0.75f, 0.70f};
+        drawBox(vp, e.pos + Vec3{0, 0.75f, 0}, {1.1f, 0.9f, 1.3f}, wool, e.yaw);
+        float rad = e.yaw * 0.01745329f;
+        Vec3 headOffset{-sinf(rad)*0.7f, 0.95f, -cosf(rad)*0.7f};
+        drawBox(vp, e.pos + headOffset, {0.55f, 0.55f, 0.55f}, headSkin, e.yaw);
+        drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, -0.38f}, {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
+        drawBox(vp, e.pos + Vec3{0.28f, 0.3f, -0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
+        drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, 0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
+        drawBox(vp, e.pos + Vec3{0.28f, 0.3f, 0.38f},   {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
+    } else if (e.type == ENT_ITEM_DROP) {
+        float bob = sinf(e.animTime * 3.5f) * 0.1f;
+        drawBox(vp, e.pos + Vec3{0, 0.2f + bob, 0}, {0.35f, 0.35f, 0.35f}, {0.3f, 0.8f, 0.8f}, e.animTime * 90.0f);
+    }
+}
+
+void Renderer::frame(World& world, Player& player, float time) {
+    if (player.inWater) {
+        glClearColor(0.12f, 0.35f, 0.65f, 1.0f);
+    } else {
+        glClearColor(0.48f, 0.72f, 0.95f, 1.0f);
+    }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     Mat4 proj = matPerspective(1.222f, (float)screenW / (float)screenH, 0.1f, 350.0f);
@@ -757,6 +907,10 @@ void Renderer::frame(World& world, Player& player) {
     Mat4 view = matLookAt(eye, eye + player.lookDir(), {0, 1, 0});
     Mat4 vp = proj * view;
 
+    // 1. Gökyüzü & Bulutlar
+    drawSunAndClouds(vp, player.pos, time);
+
+    // 2. Voxel Dünya Meshleri
     glUseProgram(worldProg);
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, vp.m);
     glActiveTexture(GL_TEXTURE0);
@@ -774,21 +928,21 @@ void Renderer::frame(World& world, Player& player) {
         }
     }
 
+    // 3. Blok Çatlama Animasyonu
+    if (player.isBreaking && player.breakProgress > 0.0f) {
+        drawBreakingOverlay(vp, player.breakingBlock, player.breakProgress);
+    }
+
+    // 4. Moblar
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
-        if (!e.alive) continue;
-        if (e.type == ENT_PIG) {
-            drawEntityBox(vp, e.pos, {0.9f, 0.8f, 1.2f}, {0.95f, 0.65f, 0.65f}, e.yaw);
-            drawEntityBox(vp, e.pos + Vec3{0, 0.5f, 0.5f}, {0.6f, 0.6f, 0.6f}, {0.95f, 0.65f, 0.65f}, e.yaw);
-        } else if (e.type == ENT_COW) {
-            drawEntityBox(vp, e.pos, {1.0f, 1.1f, 1.4f}, {0.45f, 0.30f, 0.15f}, e.yaw);
-            drawEntityBox(vp, e.pos + Vec3{0, 0.7f, 0.6f}, {0.7f, 0.7f, 0.7f}, {0.35f, 0.20f, 0.10f}, e.yaw);
-        } else if (e.type == ENT_SHEEP) {
-            drawEntityBox(vp, e.pos, {1.0f, 1.0f, 1.3f}, {0.9f, 0.9f, 0.9f}, e.yaw);
-            drawEntityBox(vp, e.pos + Vec3{0, 0.6f, 0.6f}, {0.6f, 0.6f, 0.6f}, {0.8f, 0.75f, 0.7f}, e.yaw);
-        } else if (e.type == ENT_ITEM_DROP) {
-            drawEntityBox(vp, e.pos, {0.35f, 0.35f, 0.35f}, {0.3f, 0.8f, 0.8f}, e.animTime * 90.0f);
-        }
+        if (e.alive) drawMob(vp, e);
+    }
+
+    // 5. Parçacıklar
+    std::lock_guard plk(world.particleMtx);
+    for (const auto& p : world.particles) {
+        drawBox(vp, p.pos, {0.12f, 0.12f, 0.12f}, p.color);
     }
 }
 
@@ -851,7 +1005,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     int spawnY = gState->world->getHighestBlock(0, 0);
     gState->player.pos = {0.5f, static_cast<float>(spawnY) + 1.2f, 0.5f};
     
-    // Varsayılan Envanter Eşyaları
     gState->player.inv.slots[0] = ItemStack(OAK_PLANKS, 64);
     gState->player.inv.slots[1] = ItemStack(COBBLESTONE, 64);
     gState->player.inv.slots[2] = ItemStack(DIAMOND_ORE, 64);
@@ -863,7 +1016,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->player.inv.slots[8] = ItemStack(TNT, 64);
 
     gState->initialized = true;
-    LOGI("Minecraft Engine Baslatildi. Spawn: [0, %d, 0]", spawnY);
+    LOGI("Minecraft Motoru Hazir. Dogus: [0, %d, 0]", spawnY);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeResize(JNIEnv*, jclass, jint w, jint h) {
@@ -880,22 +1033,35 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     float sdt = clampf(dt, 0.0f, 0.033f);
     gs.time += sdt;
 
-    float yaw = gs.player.yaw * (3.14159265f / 180.0f);
-    float spd = gs.player.sprinting ? SPRINT_SPD : (gs.player.sneaking ? SNEAK_SPD : WALK_SPD);
-    
+    // Su Durumu Kontrolü
+    uint8_t bFeet = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y), flr(gs.player.pos.z));
+    uint8_t bHead = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y + 1.2f), flr(gs.player.pos.z));
+    gs.player.inWater = (bFeet == WATER || bHead == WATER);
+
+    // Düzeltilmiş D-Pad Hareket Yönü
+    float yawRad = gs.player.yaw * (3.14159265f / 180.0f);
+    float spd = gs.player.inWater ? WALK_SPD * 0.6f : WALK_SPD;
+
     float fwd = gs.inputZ * spd;
     float str = gs.inputX * spd;
 
     Vec3 moveDir = {
-        sinf(yaw) * fwd + cosf(-yaw) * str,
+        -sinf(yawRad) * fwd + cosf(yawRad) * str,
         0.0f,
-        -cosf(yaw) * fwd + sinf(-yaw) * str
+        -cosf(yawRad) * fwd - sinf(yawRad) * str
     };
 
     gs.player.vel.x = moveDir.x;
     gs.player.vel.z = moveDir.z;
-    gs.player.vel.y += GRAVITY * sdt;
 
+    if (gs.player.inWater) {
+        gs.player.vel.y += GRAVITY * sdt * 0.2f;
+        gs.player.vel.y *= 0.85f;
+    } else {
+        gs.player.vel.y += GRAVITY * sdt;
+    }
+
+    // AABB Çarpışma
     Vec3 p = gs.player.pos;
     p.x += gs.player.vel.x * sdt;
     if (checkCollision(*gs.world, p)) {
@@ -922,6 +1088,38 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
+    // Blok Kırma İlerlemesi
+    if (gs.player.isBreaking) {
+        auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, gs.player.lookDir(), REACH);
+        if (hit.hit) {
+            if (hit.block == gs.player.breakingBlock) {
+                uint8_t targetB = gs.world->blockAt(hit.block.x, hit.block.y, hit.block.z);
+                float hVal = std::max(0.2f, BD(targetB).hardness);
+                gs.player.breakProgress += sdt / (hVal * 0.8f);
+
+                if (gs.player.breakProgress >= 1.0f) {
+                    // Blok Kırıldı
+                    gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
+                    gs.world->spawnBreakParticles({hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, targetB);
+                    uint16_t drop = BD(targetB).dropId;
+                    if (drop != AIR) {
+                        gs.world->spawnItemDrop(drop, {hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, {0, 2.5f, 0});
+                    }
+                    gs.player.breakProgress = 0.0f;
+                    gs.player.breakingBlock = {-999, -999, -999};
+                }
+            } else {
+                gs.player.breakingBlock = hit.block;
+                gs.player.breakProgress = 0.0f;
+            }
+        } else {
+            gs.player.breakProgress = 0.0f;
+        }
+    } else {
+        gs.player.breakProgress = 0.0f;
+    }
+
+    // Eşya Toplama
     {
         std::lock_guard lk(gs.world->entityMtx);
         for (auto& e : gs.world->entities) {
@@ -936,7 +1134,8 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     }
 
     gs.world->updateEntities(sdt);
-    gs.renderer.frame(*gs.world, gs.player);
+    gs.world->updateParticles(sdt);
+    gs.renderer.frame(*gs.world, gs.player, gs.time);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInput(JNIEnv*, jclass, jfloat x, jfloat z) {
@@ -950,17 +1149,21 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeCameraInput(JNIEnv*, jcl
     }
 }
 
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetBreaking(JNIEnv*, jclass, jboolean active) {
+    if (gState) {
+        gState->player.isBreaking = active;
+        if (!active) {
+            gState->player.breakProgress = 0.0f;
+            gState->player.breakingBlock = {-999, -999, -999};
+        }
+    }
+}
+
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jint type) {
     if (!gState) return;
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, 1.62f, 0}, gState->player.lookDir(), REACH);
-    if (type == 0 && hit.hit) {
-        uint8_t oldB = gState->world->blockAt(hit.block.x, hit.block.y, hit.block.z);
-        gState->world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
-        uint16_t drop = BD(oldB).dropId;
-        if (drop != AIR) {
-            gState->world->spawnItemDrop(drop, {(float)hit.block.x + 0.5f, (float)hit.block.y + 0.5f, (float)hit.block.z + 0.5f}, {0, 2.5f, 0});
-        }
-    } else if (type == 1 && hit.hit) {
+    if (type == 1 && hit.hit) {
+        // Blok Koy
         ItemStack& held = gState->player.inv.active();
         if (!held.empty() && held.id < BLOCK_COUNT) {
             Vec3i target = {hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z};
@@ -975,18 +1178,13 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jin
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeJump(JNIEnv*, jclass) {
-    if (gState && gState->player.onGround) {
+    if (!gState) return;
+    if (gState->player.inWater) {
+        gState->player.vel.y = 4.5f; // Suda Yüzme
+    } else if (gState->player.onGround) {
         gState->player.vel.y = JUMP_VEL;
         gState->player.onGround = false;
     }
-}
-
-JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSneak(JNIEnv*, jclass, jboolean on) {
-    if (gState) gState->player.sneaking = on;
-}
-
-JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSprint(JNIEnv*, jclass, jboolean on) {
-    if (gState) gState->player.sprinting = on;
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSelectSlot(JNIEnv*, jclass, jint slot) {
