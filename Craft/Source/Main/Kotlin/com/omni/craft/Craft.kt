@@ -279,6 +279,15 @@ class Activity : AndroidActivity() {
     private var dayNightEnabled = true
     private val prefs by lazy { getSharedPreferences("omni_settings", Context.MODE_PRIVATE) }
 
+    // Responsive UI: no fixed-pixel lobby/HUD sizing.
+    private fun dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
+    private fun uiScale(): Float {
+        val w = rootLayout.width.coerceAtLeast(1)
+        val h = rootLayout.height.coerceAtLeast(1)
+        return (minOf(w, h) / 900f).coerceIn(0.72f, 1.35f)
+    }
+    private fun ui(v: Float): Int = dp(v * uiScale())
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
@@ -318,51 +327,75 @@ class Activity : AndroidActivity() {
 
     private fun showLobby() {
         rootLayout.removeAllViews()
-
-        val lobby = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.rgb(20, 24, 30))
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-            )
-        }
-
-        val title = TextView(this).apply {
-            text = "MINECRAFT : OMNI"
-            textSize = 32f
-            setTextColor(Color.WHITE)
-            typeface = Typeface.DEFAULT_BOLD
-            setShadowLayer(8f, 2f, 2f, Color.BLACK)
-            setPadding(0, 0, 0, 40)
-        }
-        lobby.addView(title)
-
-        fun createLobbyBtn(text: String, onClick: () -> Unit): Button {
-            return Button(this).apply {
-                setText(text)
-                textSize = 16f
-                setTextColor(Color.WHITE)
+        rootLayout.post {
+            val lobby = FrameLayout(this).apply {
+                layoutParams = FrameLayout.LayoutParams(-1, -1)
+                background = GradientDrawable(GradientDrawable.Orientation.TL_BR, intArrayOf(
+                    Color.rgb(4, 8, 15), Color.rgb(9, 30, 43), Color.rgb(18, 9, 34)
+                ))
+            }
+            val glow = View(this).apply {
                 background = GradientDrawable().apply {
-                    setColor(Color.argb(220, 60, 65, 75))
-                    cornerRadius = 10f
-                    setStroke(2, Color.WHITE)
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.argb(55, 50, 210, 255))
                 }
-                layoutParams = LinearLayout.LayoutParams(400, 110).apply {
-                    setMargins(0, 10, 0, 10)
+                layoutParams = FrameLayout.LayoutParams(ui(520f), ui(520f)).apply {
+                    gravity = Gravity.TOP or Gravity.END
+                    topMargin = -ui(180f); rightMargin = -ui(150f)
+                }
+            }
+            lobby.addView(glow)
+
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = Gravity.CENTER
+                setPadding(ui(32f), ui(24f), ui(32f), ui(24f))
+                layoutParams = FrameLayout.LayoutParams(ui(650f), -2, Gravity.CENTER)
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(205, 8, 15, 24))
+                    cornerRadius = ui(30f).toFloat()
+                    setStroke(ui(1f), Color.argb(110, 120, 225, 255))
+                }
+                elevation = ui(18f).toFloat()
+            }
+            fun text(value: String, size: Float, color: Int) = TextView(this).apply {
+                text = value; textSize = size * uiScale(); setTextColor(color); gravity = Gravity.CENTER
+            }
+            content.addView(text("OMNI CRAFT", 48f, Color.WHITE).apply {
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                letterSpacing = 0.08f
+                setShadowLayer(ui(18f).toFloat(), 0f, ui(5f).toFloat(), Color.argb(220,0,0,0))
+            })
+            content.addView(text("AAA SURVIVAL • INFINITE WORLDS", 12f, Color.rgb(100,225,255)).apply {
+                letterSpacing = 0.16f; setPadding(0, 0, 0, ui(8f))
+            })
+            content.addView(text("Keşfet  •  İnşa Et  •  Hayatta Kal  •  Geliş", 14f, Color.LTGRAY).apply {
+                setPadding(0, 0, 0, ui(26f))
+            })
+            fun createLobbyBtn(label: String, primary: Boolean, onClick: () -> Unit) = Button(this).apply {
+                text = label; textSize = (if (primary) 18f else 15f) * uiScale()
+                setTextColor(Color.WHITE); isAllCaps = false; stateListAnimator = null
+                background = GradientDrawable().apply {
+                    setColor(if (primary) Color.rgb(22,142,177) else Color.argb(225,27,40,53))
+                    cornerRadius = ui(if (primary) 20f else 16f).toFloat()
+                    setStroke(ui(if (primary) 2f else 1f), if (primary) Color.rgb(135,245,255) else Color.argb(130,150,190,210))
+                }
+                elevation = ui(if (primary) 10f else 6f).toFloat()
+                layoutParams = LinearLayout.LayoutParams(ui(520f), ui(if (primary) 92f else 72f)).apply {
+                    setMargins(0, ui(7f), 0, ui(7f))
                 }
                 setOnClickListener { onClick() }
             }
+            content.addView(createLobbyBtn("▶   DÜNYAYA GİR", true) { startGame() })
+            content.addView(createLobbyBtn("⚙   AYARLAR", false) { showSettingsDialog() })
+            content.addView(createLobbyBtn("✕   ÇIKIŞ", false) { finish() })
+            content.addView(text("Procedural Terrain  •  Dynamic Sky  •  Day/Night  •  Auto Save", 10f, Color.argb(185,205,220,230)).apply {
+                setPadding(0, ui(20f), 0, 0)
+            })
+            lobby.addView(content)
+            rootLayout.addView(lobby)
+            applyFullScreen()
         }
-
-        lobby.addView(createLobbyBtn("DÜNYAYA GİR") { startGame() })
-        lobby.addView(createLobbyBtn("AYARLAR") { showSettingsDialog() })
-        lobby.addView(createLobbyBtn("ÇIKIŞ") { finish() })
-        lobby.addView(TextView(this).apply { text="Omni Craft • Sonsuz prosedürel dünya • Otomatik kayıt"; textSize=12f; setTextColor(Color.LTGRAY); setPadding(0,24,0,0) })
-
-        rootLayout.addView(lobby)
-        applyFullScreen()
     }
 
     private fun startGame() {
@@ -387,11 +420,11 @@ class Activity : AndroidActivity() {
         // 1. Crosshair
         val chV = View(this).apply {
             background = GradientDrawable().apply { setColor(Color.argb(180, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(4, 32).apply { gravity = Gravity.CENTER }
+            layoutParams = FrameLayout.LayoutParams(ui(4f), ui(32f)).apply { gravity = Gravity.CENTER }
         }
         val chH = View(this).apply {
             background = GradientDrawable().apply { setColor(Color.argb(180, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(32, 4).apply { gravity = Gravity.CENTER }
+            layoutParams = FrameLayout.LayoutParams(ui(32f), ui(4f)).apply { gravity = Gravity.CENTER }
         }
         hud.addView(chV)
         hud.addView(chH)
@@ -403,7 +436,7 @@ class Activity : AndroidActivity() {
                 setColor(Color.argb(80, 40, 40, 40))
                 setStroke(3, Color.argb(150, 200, 200, 200))
             }
-            layoutParams = FrameLayout.LayoutParams(260, 260).apply {
+            layoutParams = FrameLayout.LayoutParams(ui(190f), ui(190f)).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
                 setMargins(60, 0, 0, 60)
             }
@@ -431,7 +464,7 @@ class Activity : AndroidActivity() {
                 setColor(Color.argb(160, 180, 45, 45))
                 setStroke(2, Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(125, 125).apply { setMargins(8, 8, 8, 8) }
+            layoutParams = LinearLayout.LayoutParams(ui(92f), ui(92f)).apply { setMargins(8, 8, 8, 8) }
             setOnTouchListener { _, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { Engine.nativeSetBreaking(true); true }
@@ -449,7 +482,7 @@ class Activity : AndroidActivity() {
                 setColor(Color.argb(160, 60, 60, 60))
                 setStroke(2, Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(125, 125).apply { setMargins(8, 8, 8, 8) }
+            layoutParams = LinearLayout.LayoutParams(ui(92f), ui(92f)).apply { setMargins(8, 8, 8, 8) }
             setOnTouchListener { _, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> { Engine.nativeSetJumpState(true); true }
@@ -495,7 +528,7 @@ class Activity : AndroidActivity() {
                     cornerRadius = 8f
                     setStroke(if (i == 0) 3 else 1, if (i == 0) Color.WHITE else Color.GRAY)
                 }
-                layoutParams = LinearLayout.LayoutParams(92, 92).apply { setMargins(3, 3, 3, 3) }
+                layoutParams = LinearLayout.LayoutParams(ui(72f), ui(72f)).apply { setMargins(3, 3, 3, 3) }
             }
 
             val blockIcon = ImageView(this).apply {
@@ -543,7 +576,7 @@ class Activity : AndroidActivity() {
                 cornerRadius = 10f
                 setStroke(2, Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(92, 92).apply { marginStart = 10 }
+            layoutParams = LinearLayout.LayoutParams(ui(72f), ui(72f)).apply { marginStart = 10 }
             setOnClickListener { showInventoryDialog() }
         }
         hotbarContainer.addView(invBtn)
@@ -559,7 +592,7 @@ class Activity : AndroidActivity() {
                 cornerRadius = 8f
                 setStroke(1, Color.WHITE)
             }
-            layoutParams = FrameLayout.LayoutParams(80, 80).apply {
+            layoutParams = FrameLayout.LayoutParams(ui(64f), ui(64f)).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
                 topMargin = 18
             }
@@ -683,8 +716,8 @@ class Activity : AndroidActivity() {
                         cornerRadius = 8f
                     }
                     layoutParams = GridLayout.LayoutParams().apply {
-                        width = 105
-                        height = 105
+                        width = ui(82f)
+                        height = ui(82f)
                         setMargins(4, 4, 4, 4)
                     }
                 }
@@ -693,7 +726,7 @@ class Activity : AndroidActivity() {
                     val icon = ImageView(this).apply {
                         setImageDrawable(BlockIconFactory.getIcon(this@Activity, id))
                         scaleType = ImageView.ScaleType.FIT_CENTER
-                        layoutParams = FrameLayout.LayoutParams(75, 75).apply { gravity = Gravity.CENTER }
+                        layoutParams = FrameLayout.LayoutParams(ui(60f), ui(60f)).apply { gravity = Gravity.CENTER }
                     }
                     slotContainer.addView(icon)
 
@@ -728,7 +761,7 @@ class Activity : AndroidActivity() {
                 cornerRadius = 10f
                 setStroke(2, Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(260, 95).apply { topMargin = 25 }
+            layoutParams = LinearLayout.LayoutParams(ui(220f), ui(78f)).apply { topMargin = 25 }
             setOnClickListener { dialog.dismiss(); applyFullScreen() }
         }
         layout.addView(closeBtn)
@@ -779,7 +812,7 @@ class Activity : AndroidActivity() {
                     setColor(Color.argb(200, 55, 55, 55))
                     setStroke(2, Color.WHITE)
                 }
-                layoutParams = LinearLayout.LayoutParams(380, 100).apply { setMargins(0, 10, 0, 10) }
+                layoutParams = LinearLayout.LayoutParams(ui(320f), ui(78f)).apply { setMargins(0, 10, 0, 10) }
                 setOnClickListener { onClick() }
             }
         }

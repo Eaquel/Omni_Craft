@@ -918,6 +918,10 @@ void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
 }
 
 void Renderer::drawMob(const Mat4& vp, const Entity& e) {
+    // Entities are made from independent parts. Disable face culling here so
+    // thin legs/ears/horns never disappear because of their winding order.
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
     float legAngle = sinf(e.animTime * 8.0f) * 25.0f;
     float rad = e.yaw * 0.01745329f;
 
@@ -952,10 +956,14 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e) {
         drawBox(vp, e.pos + Vec3{0.28f, 0.3f, -0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, 0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{0.28f, 0.3f, 0.38f},   {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
+        Vec3 eye{0.04f, 0.99f, -0.95f};
+        drawBox(vp, e.pos + eye, {0.055f,0.055f,0.035f}, {0.02f,0.02f,0.02f}, e.yaw);
+        drawBox(vp, e.pos + Vec3{-0.04f,0.99f,-0.95f}, {0.055f,0.055f,0.035f}, {0.02f,0.02f,0.02f}, e.yaw);
     } else if (e.type == ENT_ITEM_DROP) {
         float bob = sinf(e.animTime * 3.5f) * 0.1f;
         drawBox(vp, e.pos + Vec3{0, 0.2f + bob, 0}, {0.35f, 0.35f, 0.35f}, {0.3f, 0.8f, 0.8f}, e.animTime * 90.0f);
     }
+    glEnable(GL_CULL_FACE);
 }
 
 void Renderer::frame(World& world, Player& player, float time) {
