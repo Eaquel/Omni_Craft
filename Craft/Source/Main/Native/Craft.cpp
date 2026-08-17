@@ -17,8 +17,8 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     if (fd >= 0) {
         char buf[512];
         snprintf(buf, sizeof(buf),
-                 "=== OMNI CRAFT CRASH ===\n"
-                 "Signal: %d, Addr: %p\n"
+                 "=== OMNI CRAFT AAA CRASH HANDLER ===\n"
+                 "Signal: %d, Fault Addr: %p\n"
                  "Time: %04d-%02d-%02d %02d:%02d:%02d\n",
                  sig, info->si_addr,
                  timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
@@ -26,7 +26,7 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
         write(fd, buf, strlen(buf));
         close(fd);
     }
-    LOGE("Yerel motor cokmesi: %s", filePath);
+    LOGE("Yerel motor çökmesi yakalandı: %s", filePath);
     _exit(1);
 }
 
@@ -119,13 +119,13 @@ static uint32_t gWorldSeed = 0x5EED1234u;
 static inline float getTerrainHeight(float x, float z) {
     const float sx = static_cast<float>((gWorldSeed & 0xFFFFu)) * 0.00001f;
     const float sz = static_cast<float>((gWorldSeed >> 16) & 0xFFFFu) * 0.00001f;
-    return 30.0f + smoothNoise(x * 0.015f + sx, z * 0.015f + sz) * 18.0f +
-                   smoothNoise(x * 0.05f - sz, z * 0.05f + sx) * 8.0f;
+    return 30.0f + smoothNoise(x * 0.012f + sx, z * 0.012f + sz) * 22.0f +
+                   smoothNoise(x * 0.045f - sz, z * 0.045f + sx) * 9.0f;
 }
 
 static Vec3 getRayDirection(const Player& player, float screenX, float screenY, int screenW, int screenH) {
     float aspect = static_cast<float>(screenW) / static_cast<float>(screenH);
-    float fovRad = 1.222f;
+    float fovRad = player.fov * 0.01745329252f;
     float halfFovTan = tanf(fovRad * 0.5f);
 
     float ndcX = (2.0f * screenX / static_cast<float>(screenW)) - 1.0f;
@@ -192,6 +192,8 @@ Chunk::Chunk(int x, int z) : cx(x), cz(z) {
 Chunk::~Chunk() {
     if (vao) glDeleteVertexArrays(1, &vao);
     if (vbo) glDeleteBuffers(1, &vbo);
+    if (waterVao) glDeleteVertexArrays(1, &waterVao);
+    if (waterVbo) glDeleteBuffers(1, &waterVbo);
 }
 
 uint8_t Chunk::get(int x, int y, int z) const {
@@ -205,9 +207,19 @@ void Chunk::set(int x, int y, int z, uint8_t b) {
     dirty = true;
 }
 
+static inline float calcAO(bool side1, bool side2, bool corner) {
+    if (side1 && side2) return 0.35f;
+    int count = (side1 ? 1 : 0) + (side2 ? 1 : 0) + (corner ? 1 : 0);
+    if (count == 2) return 0.55f;
+    if (count == 1) return 0.78f;
+    return 1.0f;
+}
+
 void Chunk::buildMesh(const World& world) {
-    std::vector<Vertex> verts;
-    verts.reserve(4096);
+    std::vector<Vertex> opaqueVerts;
+    std::vector<Vertex> waterVerts;
+    opaqueVerts.reserve(6144);
+    waterVerts.reserve(1024);
 
     auto getBlock = [&](int lx, int ly, int lz) -> uint8_t {
         if (ly < 0 || ly >= WH) return AIR;
@@ -215,7 +227,13 @@ void Chunk::buildMesh(const World& world) {
         return world.blockAt(cx * CS + lx, ly, cz * CS + lz);
     };
 
-    auto addQuad = [&](int tile, float light,
+    auto isSolid = [&](int lx, int ly, int lz) -> bool {
+        uint8_t b = getBlock(lx, ly, lz);
+        return b != AIR && b != WATER && BD(b).solid;
+    };
+
+    auto addQuad = [&](std::vector<Vertex>& target, int tile, float baseLight,
+                       float ao0, float ao1, float ao2, float ao3,
                        float x0, float y0, float z0,
                        float x1, float y1, float z1,
                        float x2, float y2, float z2,
@@ -223,14 +241,15 @@ void Chunk::buildMesh(const World& world) {
         float tx = (tile % 4) * 0.25f;
         float ty = (tile / 4) * 0.25f;
         float tw = 0.25f;
+        float tId = static_cast<float>(tile);
 
-        verts.push_back({x0, y0, z0, tx,      ty+tw, light});
-        verts.push_back({x1, y1, z1, tx+tw,   ty+tw, light});
-        verts.push_back({x2, y2, z2, tx+tw,   ty,    light});
+        target.push_back({x0, y0, z0, tx,      ty+tw, baseLight, ao0, tId});
+        target.push_back({x1, y1, z1, tx+tw,   ty+tw, baseLight, ao1, tId});
+        target.push_back({x2, y2, z2, tx+tw,   ty,    baseLight, ao2, tId});
 
-        verts.push_back({x0, y0, z0, tx,      ty+tw, light});
-        verts.push_back({x2, y2, z2, tx+tw,   ty,    light});
-        verts.push_back({x3, y3, z3, tx,      ty,    light});
+        target.push_back({x0, y0, z0, tx,      ty+tw, baseLight, ao0, tId});
+        target.push_back({x2, y2, z2, tx+tw,   ty,    baseLight, ao2, tId});
+        target.push_back({x3, y3, z3, tx,      ty,    baseLight, ao3, tId});
     };
 
     for (int x = 0; x < CS; ++x) {
@@ -243,45 +262,75 @@ void Chunk::buildMesh(const World& world) {
                 float wy = static_cast<float>(y);
                 float wz = static_cast<float>(cz * CS + z);
 
-                // +Y
+                if (id == WATER) {
+                    uint8_t bTop = getBlock(x, y + 1, z);
+                    if (bTop == AIR) {
+                        addQuad(waterVerts, 14, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f,
+                                wx+0, wy+0.90f, wz+0, wx+0, wy+0.90f, wz+1,
+                                wx+1, wy+0.90f, wz+1, wx+1, wy+0.90f, wz+0);
+                    }
+                    continue;
+                }
+
+                // +Y (Üst Yüzey)
                 uint8_t bTop = getBlock(x, y + 1, z);
-                if (!BD(bTop).solid || (bTop == WATER && id != WATER)) {
-                    addQuad(BD(id).topTile, 1.0f,
+                if (!BD(bTop).solid) {
+                    float ao0 = calcAO(isSolid(x-1, y+1, z), isSolid(x, y+1, z-1), isSolid(x-1, y+1, z-1));
+                    float ao1 = calcAO(isSolid(x-1, y+1, z), isSolid(x, y+1, z+1), isSolid(x-1, y+1, z+1));
+                    float ao2 = calcAO(isSolid(x+1, y+1, z), isSolid(x, y+1, z+1), isSolid(x+1, y+1, z+1));
+                    float ao3 = calcAO(isSolid(x+1, y+1, z), isSolid(x, y+1, z-1), isSolid(x+1, y+1, z-1));
+                    addQuad(opaqueVerts, BD(id).topTile, 1.0f, ao0, ao1, ao2, ao3,
                             wx+0, wy+1, wz+0, wx+0, wy+1, wz+1,
                             wx+1, wy+1, wz+1, wx+1, wy+1, wz+0);
                 }
-                // -Y
+                // -Y (Alt Yüzey)
                 uint8_t bBot = getBlock(x, y - 1, z);
                 if (!BD(bBot).solid) {
-                    addQuad(BD(id).botTile, 0.5f,
+                    addQuad(opaqueVerts, BD(id).botTile, 0.55f, 0.8f, 0.8f, 0.8f, 0.8f,
                             wx+0, wy+0, wz+1, wx+0, wy+0, wz+0,
                             wx+1, wy+0, wz+0, wx+1, wy+0, wz+1);
                 }
-                // +Z
+                // +Z (Ön Yüzey)
                 uint8_t bFwd = getBlock(x, y, z + 1);
                 if (!BD(bFwd).solid) {
-                    addQuad(BD(id).sideTile, 0.85f,
+                    float ao0 = calcAO(isSolid(x-1, y, z+1), isSolid(x, y-1, z+1), isSolid(x-1, y-1, z+1));
+                    float ao1 = calcAO(isSolid(x+1, y, z+1), isSolid(x, y-1, z+1), isSolid(x+1, y-1, z+1));
+                    float ao2 = calcAO(isSolid(x+1, y, z+1), isSolid(x, y+1, z+1), isSolid(x+1, y+1, z+1));
+                    float ao3 = calcAO(isSolid(x-1, y, z+1), isSolid(x, y+1, z+1), isSolid(x-1, y+1, z+1));
+                    addQuad(opaqueVerts, BD(id).sideTile, 0.85f, ao0, ao1, ao2, ao3,
                             wx+0, wy+0, wz+1, wx+1, wy+0, wz+1,
                             wx+1, wy+1, wz+1, wx+0, wy+1, wz+1);
                 }
-                // -Z
+                // -Z (Arka Yüzey)
                 uint8_t bBack = getBlock(x, y, z - 1);
                 if (!BD(bBack).solid) {
-                    addQuad(BD(id).sideTile, 0.85f,
+                    float ao0 = calcAO(isSolid(x+1, y, z-1), isSolid(x, y-1, z-1), isSolid(x+1, y-1, z-1));
+                    float ao1 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y-1, z-1), isSolid(x-1, y-1, z-1));
+                    float ao2 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y+1, z-1), isSolid(x-1, y+1, z-1));
+                    float ao3 = calcAO(isSolid(x+1, y, z-1), isSolid(x, y+1, z-1), isSolid(x+1, y+1, z-1));
+                    addQuad(opaqueVerts, BD(id).sideTile, 0.85f, ao0, ao1, ao2, ao3,
                             wx+1, wy+0, wz+0, wx+0, wy+0, wz+0,
                             wx+0, wy+1, wz+0, wx+1, wy+1, wz+0);
                 }
-                // +X
+                // +X (Sağ Yüzey)
                 uint8_t bRight = getBlock(x + 1, y, z);
                 if (!BD(bRight).solid) {
-                    addQuad(BD(id).sideTile, 0.70f,
+                    float ao0 = calcAO(isSolid(x+1, y, z+1), isSolid(x+1, y-1, z), isSolid(x+1, y-1, z+1));
+                    float ao1 = calcAO(isSolid(x+1, y, z-1), isSolid(x+1, y-1, z), isSolid(x+1, y-1, z-1));
+                    float ao2 = calcAO(isSolid(x+1, y, z-1), isSolid(x+1, y+1, z), isSolid(x+1, y+1, z-1));
+                    float ao3 = calcAO(isSolid(x+1, y, z+1), isSolid(x+1, y+1, z), isSolid(x+1, y+1, z+1));
+                    addQuad(opaqueVerts, BD(id).sideTile, 0.72f, ao0, ao1, ao2, ao3,
                             wx+1, wy+0, wz+1, wx+1, wy+0, wz+0,
                             wx+1, wy+1, wz+0, wx+1, wy+1, wz+1);
                 }
-                // -X
+                // -X (Sol Yüzey)
                 uint8_t bLeft = getBlock(x - 1, y, z);
                 if (!BD(bLeft).solid) {
-                    addQuad(BD(id).sideTile, 0.70f,
+                    float ao0 = calcAO(isSolid(x-1, y, z-1), isSolid(x-1, y-1, z), isSolid(x-1, y-1, z-1));
+                    float ao1 = calcAO(isSolid(x-1, y, z+1), isSolid(x-1, y-1, z), isSolid(x-1, y-1, z+1));
+                    float ao2 = calcAO(isSolid(x-1, y, z+1), isSolid(x-1, y+1, z), isSolid(x-1, y+1, z+1));
+                    float ao3 = calcAO(isSolid(x-1, y, z-1), isSolid(x-1, y+1, z), isSolid(x-1, y+1, z-1));
+                    addQuad(opaqueVerts, BD(id).sideTile, 0.72f, ao0, ao1, ao2, ao3,
                             wx+0, wy+0, wz+0, wx+0, wy+0, wz+1,
                             wx+0, wy+1, wz+1, wx+0, wy+1, wz+0);
                 }
@@ -289,14 +338,14 @@ void Chunk::buildMesh(const World& world) {
         }
     }
 
-    vertexCount = verts.size();
+    vertexCount = opaqueVerts.size();
     if (vao == 0) {
         glGenVertexArrays(1, &vao);
         glGenBuffers(1, &vbo);
     }
     glBindVertexArray(vao);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(), GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, opaqueVerts.size() * sizeof(Vertex), opaqueVerts.data(), GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, x));
@@ -304,15 +353,46 @@ void Chunk::buildMesh(const World& world) {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
     glEnableVertexAttribArray(2);
     glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, light));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, ao));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, tileId));
+
+    waterVertexCount = waterVerts.size();
+    if (waterVao == 0) {
+        glGenVertexArrays(1, &waterVao);
+        glGenBuffers(1, &waterVbo);
+    }
+    glBindVertexArray(waterVao);
+    glBindBuffer(GL_ARRAY_BUFFER, waterVbo);
+    glBufferData(GL_ARRAY_BUFFER, waterVerts.size() * sizeof(Vertex), waterVerts.data(), GL_DYNAMIC_DRAW);
+
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, x));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, light));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, ao));
+    glEnableVertexAttribArray(4);
+    glVertexAttribPointer(4, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, tileId));
 
     glBindVertexArray(0);
     dirty = false;
 }
 
-void Chunk::render() {
+void Chunk::renderOpaque() {
     if (vertexCount > 0 && vao != 0) {
         glBindVertexArray(vao);
         glDrawArrays(GL_TRIANGLES, 0, vertexCount);
+    }
+}
+
+void Chunk::renderWater() {
+    if (waterVertexCount > 0 && waterVao != 0) {
+        glBindVertexArray(waterVao);
+        glDrawArrays(GL_TRIANGLES, 0, waterVertexCount);
     }
 }
 
@@ -366,7 +446,7 @@ void World::generateChunk(Chunk& c) {
                 c.set(x, y, z, WATER);
             }
 
-            if (h > SEA_LEVEL + 1 && (hash2D(wx * 5, wz * 11) > 0.96f) && x >= 2 && x <= CS - 3 && z >= 2 && z <= CS - 3) {
+            if (h > SEA_LEVEL + 1 && (hash2D(wx * 5, wz * 11) > 0.965f) && x >= 2 && x <= CS - 3 && z >= 2 && z <= CS - 3) {
                 for (int ty = h + 1; ty <= h + 5; ++ty) c.set(x, ty, z, OAK_LOG);
                 for (int lx = x - 2; lx <= x + 2; ++lx) {
                     for (int lz = z - 2; lz <= z + 2; ++lz) {
@@ -380,7 +460,7 @@ void World::generateChunk(Chunk& c) {
         }
     }
 
-    if ((c.cx + c.cz) % 4 == 0) {
+    if ((c.cx + c.cz) % 3 == 0) {
         int h = flr(getTerrainHeight(bx + 8.0f, bz + 8.0f));
         if (h > SEA_LEVEL) {
             spawnMob(ENT_PIG, {(float)bx + 8, (float)h + 0.1f, (float)bz + 8});
@@ -431,6 +511,7 @@ void World::spawnMob(EntityType type, Vec3 pos) {
     e.type = type;
     e.pos = pos;
     e.health = (type == ENT_COW ? 15.0f : 10.0f);
+    e.maxHealth = e.health;
     entities.push_back(e);
 }
 
@@ -451,16 +532,31 @@ void World::spawnBreakParticles(Vec3 pos, uint8_t blockId) {
     if (blockId == DIRT || blockId == GRASS) col = {0.45f, 0.30f, 0.18f};
     else if (blockId == STONE || blockId == COBBLESTONE) col = {0.55f, 0.55f, 0.55f};
     else if (blockId == OAK_PLANKS || blockId == OAK_LOG) col = {0.65f, 0.48f, 0.28f};
-    else if (blockId == OAK_LEAVES) col = {0.20f, 0.55f, 0.15f};
-    else if (blockId == DIAMOND_ORE) col = {0.20f, 0.85f, 0.85f};
+    else if (blockId == OAK_LEAVES) col = {0.20f, 0.58f, 0.15f};
+    else if (blockId == DIAMOND_ORE) col = {0.20f, 0.88f, 0.88f};
 
-    for (int i = 0; i < 8; ++i) {
+    for (int i = 0; i < 12; ++i) {
         Particle p;
         p.pos = pos + Vec3{((rand()%100)/100.f - 0.5f)*0.6f, ((rand()%100)/100.f - 0.5f)*0.6f, ((rand()%100)/100.f - 0.5f)*0.6f};
-        p.vel = Vec3{((rand()%100)/100.f - 0.5f)*3.0f, ((rand()%100)/100.f)*3.5f + 1.0f, ((rand()%100)/100.f - 0.5f)*3.0f};
+        p.vel = Vec3{((rand()%100)/100.f - 0.5f)*3.2f, ((rand()%100)/100.f)*3.8f + 1.2f, ((rand()%100)/100.f - 0.5f)*3.2f};
         p.color = col;
         p.life = 0.0f;
-        p.maxLife = 0.6f + ((rand()%100)/100.f) * 0.4f;
+        p.maxLife = 0.5f + ((rand()%100)/100.f) * 0.4f;
+        p.size = 0.12f;
+        particles.push_back(p);
+    }
+}
+
+void World::spawnSplashParticles(Vec3 pos) {
+    std::lock_guard lk(particleMtx);
+    for (int i = 0; i < 10; ++i) {
+        Particle p;
+        p.pos = pos + Vec3{((rand()%100)/100.f - 0.5f)*0.5f, 0.1f, ((rand()%100)/100.f - 0.5f)*0.5f};
+        p.vel = Vec3{((rand()%100)/100.f - 0.5f)*2.0f, ((rand()%100)/100.f)*2.5f + 1.0f, ((rand()%100)/100.f - 0.5f)*2.0f};
+        p.color = {0.6f, 0.85f, 1.0f};
+        p.life = 0.0f;
+        p.maxLife = 0.45f;
+        p.size = 0.09f;
         particles.push_back(p);
     }
 }
@@ -474,7 +570,7 @@ void World::updateParticles(float dt) {
             particles.pop_back();
         } else {
             particles[i].pos += particles[i].vel * dt;
-            particles[i].vel.y += GRAVITY * dt * 0.8f;
+            particles[i].vel.y += GRAVITY * dt * 0.7f;
             ++i;
         }
     }
@@ -504,7 +600,7 @@ void World::trimFarChunks(int centerCx, int centerCz, int keepRadius) {
 
 static bool checkCollision(const World& world, Vec3 pos);
 
-void World::updateEntities(float dt) {
+void World::updateEntities(float dt, const Vec3& playerPos) {
     std::lock_guard lk(entityMtx);
     for (auto& e : entities) {
         if (!e.alive) continue;
@@ -529,19 +625,31 @@ void World::updateEntities(float dt) {
 
             if (checkCollision(*this, nextPos)) {
                 e.vel.y = 0;
-                e.pos.y = flr(e.pos.y) + 0.05f;
+                e.pos.y = flr(e.pos.y) + 0.02f;
             } else {
                 e.pos.y = nextPos.y;
             }
 
-            if (fmodf(e.animTime, 3.5f) < dt) {
-                e.yaw = static_cast<float>(rand() % 360);
+            Vec3 diff = playerPos - e.pos;
+            float dist = diff.len();
+            if (dist < 8.0f) {
+                float targetYaw = atan2f(diff.x, -diff.z) * 57.29578f;
+                float diffYaw = fmodf(targetYaw - e.yaw + 540.0f, 360.0f) - 180.0f;
+                e.yaw += diffYaw * dt * 3.0f;
+            } else {
+                if (fmodf(e.animTime, 4.0f) < dt) {
+                    e.yaw = static_cast<float>(rand() % 360);
+                }
             }
+
             float rad = e.yaw * 0.01745329f;
-            Vec3 stepMove = {sinf(rad) * 0.8f * dt, 0, -cosf(rad) * 0.8f * dt};
+            Vec3 stepMove = {sinf(rad) * 0.9f * dt, 0, -cosf(rad) * 0.9f * dt};
             Vec3 testP = e.pos + stepMove;
             if (!checkCollision(*this, testP)) {
                 e.pos = testP;
+                e.walkSpeed = 1.0f;
+            } else {
+                e.walkSpeed = 0.0f;
             }
         }
     }
@@ -582,7 +690,7 @@ void World::saveWorld(const std::string& path) {
     int fd = open(file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd < 0) return;
     const uint32_t magic = 0x4F4D4E49u;
-    const uint32_t version = 2;
+    const uint32_t version = 3;
     uint32_t chunkCount = static_cast<uint32_t>(chunks.size());
     write(fd, &magic, sizeof(magic)); write(fd, &version, sizeof(version));
     write(fd, &gWorldSeed, sizeof(gWorldSeed)); write(fd, &chunkCount, sizeof(chunkCount));
@@ -592,7 +700,7 @@ void World::saveWorld(const std::string& path) {
         write(fd, ch->blocks.data(), ch->blocks.size());
     }
     close(fd);
-    LOGI("Dunya kaydedildi: %s (%u chunk)", file.c_str(), chunkCount);
+    LOGI("Dünya AAA formatında kaydedildi: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
 void World::loadWorld(const std::string& path) {
@@ -616,83 +724,83 @@ void World::loadWorld(const std::string& path) {
         if (read(fd,ch->blocks.data(),ch->blocks.size()) != static_cast<ssize_t>(ch->blocks.size())) break;
         ch->generated=true; ch->dirty=true; chunks[key(cx,cz)]=ch;
     }
-    close(fd); LOGI("Dunya yuklendi: %s (%u chunk)", file.c_str(), chunkCount);
+    close(fd); LOGI("Dünya yüklendi: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
 void Renderer::generateProceduralAtlas() {
-    const int AT_SZ = 64;
+    const int AT_SZ = 128;
     std::vector<uint32_t> pixels(AT_SZ * AT_SZ);
 
     auto putTilePixel = [&](int tileIdx, int px, int py, uint32_t color) {
-        int tx = (tileIdx % 4) * 16;
-        int ty = (tileIdx / 4) * 16;
+        int tx = (tileIdx % 4) * 32;
+        int ty = (tileIdx / 4) * 32;
         pixels[(ty + py) * AT_SZ + (tx + px)] = color;
     };
 
     for (int t = 0; t < 16; ++t) {
-        for (int y = 0; y < 16; ++y) {
-            for (int x = 0; x < 16; ++x) {
-                int noise = ((x * 7 + y * 13 + t * 19) % 24) - 12;
+        for (int y = 0; y < 32; ++y) {
+            for (int x = 0; x < 32; ++x) {
+                int noise = ((x * 11 + y * 19 + t * 23) % 28) - 14;
                 uint32_t c = makeRGBA(140, 140, 140);
                 switch(t) {
-                    case 0: // Grass Top
-                        c = makeRGBA(85 + noise, 175 + noise, 50 + noise);
+                    case 0: // Grass Top (AAA Canlı Çimen)
+                        c = makeRGBA(78 + noise, 185 + noise, 45 + noise);
                         break;
                     case 1: // Grass Side
-                        if (y < 4) c = makeRGBA(85 + noise, 175 + noise, 50 + noise);
-                        else c = makeRGBA(115 + noise, 80 + noise, 50 + noise);
+                        if (y < 7 + (x % 3)) c = makeRGBA(78 + noise, 185 + noise, 45 + noise);
+                        else c = makeRGBA(118 + noise, 82 + noise, 52 + noise);
                         break;
-                    case 2: // Dirt
-                        c = makeRGBA(115 + noise, 80 + noise, 50 + noise);
+                    case 2: // Dirt (Toprak)
+                        c = makeRGBA(118 + noise, 82 + noise, 52 + noise);
                         break;
-                    case 3: // Stone
-                        c = makeRGBA(130 + noise, 130 + noise, 130 + noise);
+                    case 3: // Stone (Taş)
+                        c = makeRGBA(135 + noise, 135 + noise, 138 + noise);
                         break;
-                    case 4: // Cobblestone
-                        noise = ((x * 11 ^ y * 17) % 36) - 18;
-                        c = makeRGBA(110 + noise, 110 + noise, 110 + noise);
+                    case 4: // Cobblestone (Kırıktaş)
+                        noise = ((x * 13 ^ y * 23) % 40) - 20;
+                        c = makeRGBA(115 + noise, 115 + noise, 115 + noise);
                         break;
-                    case 5: // Planks
-                        c = makeRGBA(170 + (y%4==0?-25:noise), 130 + noise, 75 + noise);
+                    case 5: // Planks (Tahta)
+                        c = makeRGBA(178 + (y%8==0?-30:noise), 138 + noise, 80 + noise);
                         break;
-                    case 6: // Oak Log Side
-                        c = makeRGBA(105 + (x%4==0?-20:noise), 75 + noise, 45 + noise);
+                    case 6: // Oak Log Side (Kütük)
+                        c = makeRGBA(108 + (x%8==0?-25:noise), 78 + noise, 48 + noise);
                         break;
                     case 7: // Oak Log Top
-                        c = makeRGBA(160 + noise, 125 + noise, 80 + noise);
+                        c = makeRGBA(165 + noise, 128 + noise, 82 + noise);
                         break;
-                    case 8: // Oak Leaves
-                        if ((x%3==0 && y%3==0) && ((x+y)%4==0)) {
+                    case 8: // Oak Leaves (Şeffaf Yaprak)
+                        if ((x%4==0 && y%4==0) && ((x+y)%5==0)) {
                             c = makeRGBA(0, 0, 0, 0);
                         } else {
-                            int leafVar = ((x * 5 + y * 9) % 30) - 15;
-                            c = makeRGBA(30 + leafVar, 140 + leafVar, 30 + leafVar);
+                            int leafVar = ((x * 7 + y * 13) % 36) - 18;
+                            c = makeRGBA(28 + leafVar, 155 + leafVar, 32 + leafVar, 255);
                         }
                         break;
-                    case 9: // Diamond Ore
-                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = makeRGBA(45, 220, 220);
-                        else c = makeRGBA(130 + noise, 130 + noise, 130 + noise);
+                    case 9: // Diamond Ore (Elmas Cevheri)
+                        if ((x>=8 && x<=23 && y>=8 && y<=23) && (noise > -3)) c = makeRGBA(42, 235, 235);
+                        else c = makeRGBA(135 + noise, 135 + noise, 138 + noise);
                         break;
                     case 10: // Coal Ore
-                        if ((x>=4 && x<=11 && y>=4 && y<=11) && (noise > -2)) c = makeRGBA(30, 30, 30);
-                        else c = makeRGBA(130 + noise, 130 + noise, 130 + noise);
+                        if ((x>=8 && x<=23 && y>=8 && y<=23) && (noise > -3)) c = makeRGBA(28, 28, 28);
+                        else c = makeRGBA(135 + noise, 135 + noise, 138 + noise);
                         break;
                     case 11: // Bedrock
-                        noise = ((x * 31 + y * 47) % 60) - 30;
-                        c = makeRGBA(40 + noise, 40 + noise, 40 + noise);
+                        noise = ((x * 37 + y * 53) % 70) - 35;
+                        c = makeRGBA(38 + noise, 38 + noise, 38 + noise);
                         break;
                     case 12: // Crafting Table
-                        c = makeRGBA(180 + noise, 135 + noise, 80 + noise);
+                        c = makeRGBA(185 + noise, 140 + noise, 85 + noise);
                         break;
-                    case 13: // Sand
-                        c = makeRGBA(225 + noise, 215 + noise, 155 + noise);
+                    case 13: // Sand (Kum)
+                        c = makeRGBA(232 + noise, 220 + noise, 158 + noise);
                         break;
-                    case 14: // Canli Su
-                        c = makeRGBA(27 + noise, 110 + noise, 232 + noise, 190);
+                    case 14: // Canlı Şeffaf Su
+                        c = makeRGBA(24 + noise, 120 + noise, 235 + noise, 205);
                         break;
-                    case 15: // Kirilma Catlak Maskesi
-                        if ((x == y || x == (15 - y) || (x % 3 == 0 && y > 3)) && ((x + y) % 2 == 0)) {
-                            c = makeRGBA(20, 20, 20, 210);
+                    case 15: // Kırılma Çatlak Maskesi
+                        if ((x == y || x == (31 - y) || (x % 5 == 0 && y > 6)) && ((x + y) % 2 == 0)) {
+                            c = makeRGBA(20, 20, 20, 220);
                         } else {
                             c = makeRGBA(0, 0, 0, 0);
                         }
@@ -708,10 +816,11 @@ void Renderer::generateProceduralAtlas() {
     glGenTextures(1, &atlasTex);
     glBindTexture(GL_TEXTURE_2D, atlasTex);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, AT_SZ, AT_SZ, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST_MIPMAP_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glGenerateMipmap(GL_TEXTURE_2D);
 }
 
 static const float UNIT_BOX_VERTS[] = {
@@ -733,31 +842,92 @@ static const char* VS_WORLD = R"(#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec2 aUV;
 layout(location=2) in float aLight;
+layout(location=3) in float aAO;
+layout(location=4) in float aTileId;
 uniform mat4 uMVP;
+uniform vec3 uSunDir;
+uniform float uDaylight;
 out vec2 vUV;
 out float vLight;
+out float vFogDist;
 void main(){
     vUV = aUV;
-    vLight = aLight;
-    gl_Position = uMVP * vec4(aPos, 1.0);
+    vLight = aLight * aAO * (0.25 + 0.75 * uDaylight);
+    vec4 pos4 = uMVP * vec4(aPos, 1.0);
+    vFogDist = length(pos4.xyz);
+    gl_Position = pos4;
 })";
 
 static const char* FS_WORLD = R"(#version 300 es
 precision mediump float;
 in vec2 vUV;
 in float vLight;
+in float vFogDist;
 uniform sampler2D uTexture;
+uniform vec3 uFogColor;
+uniform float uFogStart;
+uniform float uFogEnd;
 out vec4 FragColor;
 void main(){
     vec4 tex = texture(uTexture, vUV);
     if(tex.a < 0.1) discard;
-    FragColor = vec4(tex.rgb * vLight, tex.a);
+    vec3 shaded = tex.rgb * vLight;
+    float fogFactor = clamp((vFogDist - uFogStart) / (uFogEnd - uFogStart), 0.0, 1.0);
+    FragColor = vec4(mix(shaded, uFogColor, fogFactor), tex.a);
+})";
+
+static const char* VS_WATER = R"(#version 300 es
+layout(location=0) in vec3 aPos;
+layout(location=1) in vec2 aUV;
+layout(location=2) in float aLight;
+layout(location=3) in float aAO;
+layout(location=4) in float aTileId;
+uniform mat4 uMVP;
+uniform float uTime;
+uniform float uDaylight;
+out vec2 vUV;
+out float vLight;
+out float vFogDist;
+out vec3 vWorldPos;
+void main(){
+    vUV = aUV;
+    vec3 wavePos = aPos;
+    wavePos.y += sin(aPos.x * 1.5 + uTime * 2.8) * cos(aPos.z * 1.5 + uTime * 2.2) * 0.06;
+    vWorldPos = wavePos;
+    vLight = aLight * (0.3 + 0.7 * uDaylight);
+    vec4 pos4 = uMVP * vec4(wavePos, 1.0);
+    vFogDist = length(pos4.xyz);
+    gl_Position = pos4;
+})";
+
+static const char* FS_WATER = R"(#version 300 es
+precision mediump float;
+in vec2 vUV;
+in float vLight;
+in float vFogDist;
+in vec3 vWorldPos;
+uniform sampler2D uTexture;
+uniform vec3 uFogColor;
+uniform float uTime;
+uniform vec3 uEyePos;
+out vec4 FragColor;
+void main(){
+    vec4 baseTex = texture(uTexture, vUV);
+    vec3 viewDir = normalize(uEyePos - vWorldPos);
+    vec3 normal = vec3(0.0, 1.0, 0.0);
+    float fresnel = pow(1.0 - max(dot(viewDir, normal), 0.0), 2.5);
+    vec3 waterDeep = vec3(0.06, 0.38, 0.78);
+    vec3 waterShallow = vec3(0.20, 0.75, 0.95);
+    vec3 finalColor = mix(waterDeep, waterShallow, fresnel * 0.75) * vLight;
+    float fogFactor = clamp((vFogDist - 40.0) / 80.0, 0.0, 1.0);
+    FragColor = vec4(mix(finalColor, uFogColor, fogFactor), 0.78);
 })";
 
 static const char* VS_ENTITY = R"(#version 300 es
 layout(location=0) in vec3 aPos;
 layout(location=1) in vec3 aNorm;
 uniform mat4 uMVP;
+uniform mat4 uModel;
 out vec3 vNorm;
 void main(){
     vNorm = aNorm;
@@ -768,44 +938,53 @@ static const char* FS_ENTITY = R"(#version 300 es
 precision mediump float;
 in vec3 vNorm;
 uniform vec3 uColor;
+uniform float uDaylight;
 out vec4 FragColor;
 void main(){
-    float light = max(dot(vNorm, normalize(vec3(0.4, 0.8, 0.3))), 0.0) * 0.4 + 0.6;
-    FragColor = vec4(uColor * light, 1.0);
+    float diffuse = max(dot(vNorm, normalize(vec3(0.4, 0.8, 0.3))), 0.0) * 0.45 + 0.55;
+    vec3 lit = uColor * diffuse * (0.3 + 0.7 * uDaylight);
+    FragColor = vec4(lit, 1.0);
 })";
 
 static const char* VS_SKY = R"(#version 300 es
 layout(location=0) in vec3 aPos;
 uniform mat4 uMVP;
+out vec3 vPos;
 void main(){
+    vPos = aPos;
     gl_Position = uMVP * vec4(aPos, 1.0);
 })";
 
 static const char* FS_SKY = R"(#version 300 es
 precision mediump float;
+in vec3 vPos;
 uniform vec4 uSkyColor;
+uniform vec4 uHorizonColor;
 out vec4 FragColor;
 void main(){
-    FragColor = uSkyColor;
+    float h = normalize(vPos).y;
+    float factor = clamp(h * 2.0, 0.0, 1.0);
+    FragColor = mix(uHorizonColor, uSkyColor, factor);
 })";
 
 static GLuint compileShader(const char* vs, const char* fs) {
     auto compile=[](GLenum type,const char* src)->GLuint {
         GLuint sh=glCreateShader(type); glShaderSource(sh,1,&src,nullptr); glCompileShader(sh);
         GLint ok=GL_FALSE; glGetShaderiv(sh,GL_COMPILE_STATUS,&ok);
-        if(!ok){ char log[2048]={}; glGetShaderInfoLog(sh,sizeof(log),nullptr,log); LOGE("Shader compile failed: %s",log); }
+        if(!ok){ char log[2048]={}; glGetShaderInfoLog(sh,sizeof(log),nullptr,log); LOGE("Shader derleme hatası: %s",log); }
         return sh;
     };
     GLuint v=compile(GL_VERTEX_SHADER,vs), f=compile(GL_FRAGMENT_SHADER,fs);
     GLuint prog=glCreateProgram(); glAttachShader(prog,v); glAttachShader(prog,f); glLinkProgram(prog);
     GLint linked=GL_FALSE; glGetProgramiv(prog,GL_LINK_STATUS,&linked);
-    if(!linked){ char log[2048]={}; glGetProgramInfoLog(prog,sizeof(log),nullptr,log); LOGE("Program link failed: %s",log); glDeleteProgram(prog); prog=0; }
+    if(!linked){ char log[2048]={}; glGetProgramInfoLog(prog,sizeof(log),nullptr,log); LOGE("Program bağlama hatası: %s",log); glDeleteProgram(prog); prog=0; }
     glDeleteShader(v); glDeleteShader(f); return prog;
 }
 
 void Renderer::init(int w, int h) {
     screenW = w; screenH = h;
     worldProg = compileShader(VS_WORLD, FS_WORLD);
+    waterProg = compileShader(VS_WATER, FS_WATER);
     entityProg = compileShader(VS_ENTITY, FS_ENTITY);
     skyProg = compileShader(VS_SKY, FS_SKY);
     generateProceduralAtlas();
@@ -833,8 +1012,8 @@ void Renderer::resize(int w, int h) {
     glViewport(0, 0, w, h);
 }
 
-void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw, float pitch) {
-    Mat4 model;
+void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw, float pitch, float roll) {
+    Mat4 model = Mat4::identity();
     float radY = yaw * 0.01745329f;
     float radP = pitch * 0.01745329f;
     
@@ -850,6 +1029,7 @@ void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float y
     glUseProgram(entityProg);
     glUniformMatrix4fv(glGetUniformLocation(entityProg, "uMVP"), 1, GL_FALSE, mvp.m);
     glUniform3f(glGetUniformLocation(entityProg, "uColor"), color.x, color.y, color.z);
+    glUniform1f(glGetUniformLocation(entityProg, "uDaylight"), 1.0f);
 
     glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -862,10 +1042,10 @@ void Renderer::drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress) {
     glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_FALSE);
 
-    Mat4 model;
-    float expand = 1.002f;
+    Mat4 model = Mat4::identity();
+    float expand = 1.003f;
     model.m[0] = expand; model.m[5] = expand; model.m[10] = expand;
-    model.m[12] = pos.x + 0.5f; model.m[13] = pos.y + 0.5f; model.m[14] = pos.z + 0.5f; model.m[15] = 1.0f;
+    model.m[12] = pos.x + 0.5f; model.m[13] = pos.y + 0.5f; model.m[14] = pos.z + 0.5f;
     Mat4 mvp = vp * model;
 
     glUseProgram(worldProg);
@@ -882,34 +1062,61 @@ void Renderer::drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress) {
     glDepthFunc(GL_LESS);
 }
 
-void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
+void Renderer::drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, float time) {
     glDisable(GL_CULL_FACE);
     glUseProgram(skyProg);
     
-    Vec3 sunPos = playerPos + Vec3{80.0f, 120.0f, -80.0f};
-    Mat4 model;
-    model.m[0] = 24.0f; model.m[5] = 24.0f; model.m[10] = 24.0f;
-    model.m[12] = sunPos.x; model.m[13] = sunPos.y; model.m[14] = sunPos.z; model.m[15] = 1.0f;
-    Mat4 mvp = vp * model;
-    glUniformMatrix4fv(glGetUniformLocation(skyProg, "uMVP"), 1, GL_FALSE, mvp.m);
-    glUniform4f(glGetUniformLocation(skyProg, "uSkyColor"), 1.0f, 1.0f, 0.85f, 1.0f);
+    float sunAngle = (worldTime / 24000.0f) * 6.2831853f - 1.5707963f;
+    float sunY = sinf(sunAngle);
+    float sunX = cosf(sunAngle);
 
-    glBindVertexArray(boxVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    // Güneş ve Ay pozisyonları
+    Vec3 sunPos = playerPos + Vec3{sunX * 140.0f, sunY * 140.0f, 0.0f};
+    Vec3 moonPos = playerPos + Vec3{-sunX * 140.0f, -sunY * 140.0f, 0.0f};
 
-    float cloudShift = fmodf(time * 1.5f, 64.0f);
-    int cx = flr(playerPos.x / 32.0f);
-    int cz = flr(playerPos.z / 32.0f);
+    // Güneş Çizimi (Glowing Solar Disc)
+    if (sunY > -0.2f) {
+        Mat4 sm = Mat4::identity();
+        sm.m[0] = 30.0f; sm.m[5] = 30.0f; sm.m[10] = 30.0f;
+        sm.m[12] = sunPos.x; sm.m[13] = sunPos.y; sm.m[14] = sunPos.z;
+        Mat4 smvp = vp * sm;
+        glUniformMatrix4fv(glGetUniformLocation(skyProg, "uMVP"), 1, GL_FALSE, smvp.m);
+        glUniform4f(glGetUniformLocation(skyProg, "uSkyColor"), 1.0f, 0.98f, 0.82f, 1.0f);
+        glUniform4f(glGetUniformLocation(skyProg, "uHorizonColor"), 1.0f, 0.85f, 0.45f, 1.0f);
+        glBindVertexArray(boxVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
 
-    for (int dx = -3; dx <= 3; ++dx) {
-        for (int dz = -3; dz <= 3; ++dz) {
-            Vec3 cpos{(cx + dx) * 32.0f + cloudShift, 95.0f, (cz + dz) * 32.0f};
-            Mat4 cm;
-            cm.m[0] = 28.0f; cm.m[5] = 4.0f; cm.m[10] = 28.0f;
-            cm.m[12] = cpos.x; cm.m[13] = cpos.y; cm.m[14] = cpos.z; cm.m[15] = 1.0f;
+    // Ay Çizimi (Lunar Disc)
+    if (sunY < 0.2f) {
+        Mat4 mm = Mat4::identity();
+        mm.m[0] = 22.0f; mm.m[5] = 22.0f; mm.m[10] = 22.0f;
+        mm.m[12] = moonPos.x; mm.m[13] = moonPos.y; mm.m[14] = moonPos.z;
+        Mat4 mmvp = vp * mm;
+        glUniformMatrix4fv(glGetUniformLocation(skyProg, "uMVP"), 1, GL_FALSE, mmvp.m);
+        glUniform4f(glGetUniformLocation(skyProg, "uSkyColor"), 0.90f, 0.92f, 1.0f, 1.0f);
+        glUniform4f(glGetUniformLocation(skyProg, "uHorizonColor"), 0.70f, 0.75f, 0.95f, 1.0f);
+        glBindVertexArray(boxVAO);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
+    }
+
+    // 3B Hacimsel Bulutlar (Volumetric Cloud Layer)
+    float cloudShift = fmodf(time * 2.2f, 96.0f);
+    int cx = flr(playerPos.x / 48.0f);
+    int cz = flr(playerPos.z / 48.0f);
+
+    float cloudLight = clampf(0.2f + 0.8f * std::max(0.0f, sunY), 0.25f, 1.0f);
+
+    for (int dx = -4; dx <= 4; ++dx) {
+        for (int dz = -4; dz <= 4; ++dz) {
+            Vec3 cpos{(cx + dx) * 48.0f + cloudShift, 108.0f, (cz + dz) * 48.0f};
+            Mat4 cm = Mat4::identity();
+            cm.m[0] = 42.0f; cm.m[5] = 6.5f; cm.m[10] = 42.0f;
+            cm.m[12] = cpos.x; cm.m[13] = cpos.y; cm.m[14] = cpos.z;
             Mat4 cmvp = vp * cm;
             glUniformMatrix4fv(glGetUniformLocation(skyProg, "uMVP"), 1, GL_FALSE, cmvp.m);
-            glUniform4f(glGetUniformLocation(skyProg, "uSkyColor"), 1.0f, 1.0f, 1.0f, 0.75f);
+            glUniform4f(glGetUniformLocation(skyProg, "uSkyColor"), cloudLight, cloudLight, cloudLight * 1.05f, 0.85f);
+            glUniform4f(glGetUniformLocation(skyProg, "uHorizonColor"), cloudLight * 0.9f, cloudLight * 0.9f, cloudLight, 0.85f);
             glDrawArrays(GL_TRIANGLES, 0, 36);
         }
     }
@@ -917,21 +1124,19 @@ void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
     glEnable(GL_CULL_FACE);
 }
 
-void Renderer::drawMob(const Mat4& vp, const Entity& e) {
-    // Entities are made from independent parts. Disable face culling here so
-    // thin legs/ears/horns never disappear because of their winding order.
+void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
     glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
-    float legAngle = sinf(e.animTime * 8.0f) * 25.0f;
+    float legAngle = sinf(e.animTime * 7.5f) * 28.0f * e.walkSpeed;
     float rad = e.yaw * 0.01745329f;
 
     if (e.type == ENT_PIG) {
         Vec3 pink{0.96f, 0.65f, 0.65f};
-        Vec3 snoutCol{0.92f, 0.50f, 0.50f};
+        Vec3 snoutCol{0.92f, 0.48f, 0.48f};
         drawBox(vp, e.pos + Vec3{0, 0.6f, 0}, {0.9f, 0.7f, 1.2f}, pink, e.yaw);
         Vec3 headOffset{sinf(rad)*0.65f, 0.85f, -cosf(rad)*0.65f};
         drawBox(vp, e.pos + headOffset, {0.6f, 0.6f, 0.6f}, pink, e.yaw);
-        Vec3 snoutOffset{sinf(rad)*0.95f, 0.75f, -cosf(rad)*0.95f};
+        Vec3 snoutOffset{sinf(rad)*0.98f, 0.76f, -cosf(rad)*0.98f};
         drawBox(vp, e.pos + snoutOffset, {0.3f, 0.2f, 0.2f}, snoutCol, e.yaw);
         drawBox(vp, e.pos + Vec3{-0.25f, 0.25f, -0.35f}, {0.25f, 0.5f, 0.25f}, pink, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.25f, 0.25f, -0.35f},  {0.25f, 0.5f, 0.25f}, pink, e.yaw, -legAngle);
@@ -939,38 +1144,75 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e) {
         drawBox(vp, e.pos + Vec3{0.25f, 0.25f, 0.35f},   {0.25f, 0.5f, 0.25f}, pink, e.yaw, legAngle);
     } else if (e.type == ENT_COW) {
         Vec3 cowCol{0.40f, 0.25f, 0.15f};
-        drawBox(vp, e.pos + Vec3{0, 0.8f, 0}, {1.0f, 1.0f, 1.4f}, cowCol, e.yaw);
-        Vec3 headOffset{sinf(rad)*0.75f, 1.1f, -cosf(rad)*0.75f};
+        Vec3 hornCol{0.90f, 0.90f, 0.85f};
+        drawBox(vp, e.pos + Vec3{0, 0.85f, 0}, {1.05f, 1.0f, 1.45f}, cowCol, e.yaw);
+        Vec3 headOffset{sinf(rad)*0.80f, 1.15f, -cosf(rad)*0.80f};
         drawBox(vp, e.pos + headOffset, {0.6f, 0.6f, 0.6f}, cowCol, e.yaw);
+        // Boynuzlar
+        drawBox(vp, e.pos + headOffset + Vec3{0.3f, 0.35f, 0}, {0.12f, 0.25f, 0.12f}, hornCol, e.yaw);
+        drawBox(vp, e.pos + headOffset + Vec3{-0.3f, 0.35f, 0}, {0.12f, 0.25f, 0.12f}, hornCol, e.yaw);
         drawBox(vp, e.pos + Vec3{-0.3f, 0.3f, -0.4f}, {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.3f, 0.3f, -0.4f},  {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{-0.3f, 0.3f, 0.4f},  {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{0.3f, 0.3f, 0.4f},   {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, legAngle);
     } else if (e.type == ENT_SHEEP) {
-        Vec3 wool{0.92f, 0.92f, 0.92f};
-        Vec3 headSkin{0.85f, 0.75f, 0.70f};
-        drawBox(vp, e.pos + Vec3{0, 0.75f, 0}, {1.1f, 0.9f, 1.3f}, wool, e.yaw);
-        Vec3 headOffset{sinf(rad)*0.7f, 0.95f, -cosf(rad)*0.7f};
+        Vec3 wool{0.94f, 0.94f, 0.94f};
+        Vec3 headSkin{0.86f, 0.76f, 0.70f};
+        drawBox(vp, e.pos + Vec3{0, 0.78f, 0}, {1.15f, 0.95f, 1.35f}, wool, e.yaw);
+        Vec3 headOffset{sinf(rad)*0.72f, 0.98f, -cosf(rad)*0.72f};
         drawBox(vp, e.pos + headOffset, {0.55f, 0.55f, 0.55f}, headSkin, e.yaw);
         drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, -0.38f}, {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.28f, 0.3f, -0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, 0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{0.28f, 0.3f, 0.38f},   {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
-        Vec3 eye{0.04f, 0.99f, -0.95f};
-        drawBox(vp, e.pos + eye, {0.055f,0.055f,0.035f}, {0.02f,0.02f,0.02f}, e.yaw);
-        drawBox(vp, e.pos + Vec3{-0.04f,0.99f,-0.95f}, {0.055f,0.055f,0.035f}, {0.02f,0.02f,0.02f}, e.yaw);
     } else if (e.type == ENT_ITEM_DROP) {
-        float bob = sinf(e.animTime * 3.5f) * 0.1f;
-        drawBox(vp, e.pos + Vec3{0, 0.2f + bob, 0}, {0.35f, 0.35f, 0.35f}, {0.3f, 0.8f, 0.8f}, e.animTime * 90.0f);
+        float bob = sinf(e.animTime * 3.8f) * 0.12f;
+        drawBox(vp, e.pos + Vec3{0, 0.25f + bob, 0}, {0.35f, 0.35f, 0.35f}, {0.2f, 0.85f, 0.95f}, e.animTime * 95.0f);
     }
     glEnable(GL_CULL_FACE);
 }
 
+void Renderer::drawFirstPersonHand(const Mat4& proj, const Player& player, float time) {
+    glDisable(GL_DEPTH_TEST);
+    float swing = sinf(player.handSwingProgress * 3.1415926f) * 0.4f;
+    float bobX = cosf(time * 6.0f) * 0.02f * (player.vel.len() > 0.1f ? 1.0f : 0.2f);
+    float bobY = fabsf(sinf(time * 6.0f)) * 0.02f * (player.vel.len() > 0.1f ? 1.0f : 0.2f);
+
+    Mat4 handModel = Mat4::identity();
+    handModel.m[0] = 0.22f; handModel.m[5] = 0.45f; handModel.m[10] = 0.22f;
+    handModel.m[12] = 0.45f + bobX + swing * 0.1f;
+    handModel.m[13] = -0.42f - bobY - swing * 0.2f;
+    handModel.m[14] = -0.65f - swing * 0.2f;
+
+    glUseProgram(entityProg);
+    glUniformMatrix4fv(glGetUniformLocation(entityProg, "uMVP"), 1, GL_FALSE, handModel.m);
+    glUniform3f(glGetUniformLocation(entityProg, "uColor"), 0.88f, 0.68f, 0.52f);
+    glUniform1f(glGetUniformLocation(entityProg, "uDaylight"), 1.0f);
+
+    glBindVertexArray(boxVAO);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
+    glEnable(GL_DEPTH_TEST);
+}
+
 void Renderer::frame(World& world, Player& player, float time) {
-    float daylight=1.0f;
-    if(player.dayNightEnabled){ float sun=sinf((player.worldTime/24000.0f)*6.2831853f); daylight=clampf(0.18f+0.82f*std::max(0.0f,sun),0.18f,1.0f); }
-    if(player.inWater) glClearColor(0.06f*daylight,0.22f*daylight,0.48f*daylight,1.0f);
-    else glClearColor(0.20f+0.28f*daylight,0.28f+0.44f*daylight,0.38f+0.57f*daylight,1.0f);
+    float sunAngle = (player.worldTime / 24000.0f) * 6.2831853f - 1.5707963f;
+    float sunY = sinf(sunAngle);
+    float daylight = clampf(0.18f + 0.82f * std::max(0.0f, sunY), 0.18f, 1.0f);
+
+    Vec3 skyColorDay{0.35f, 0.65f, 0.98f};
+    Vec3 horizonColorDay{0.72f, 0.88f, 1.0f};
+    Vec3 skyColorNight{0.03f, 0.05f, 0.12f};
+    Vec3 horizonColorNight{0.08f, 0.10f, 0.20f};
+
+    Vec3 curSky = skyColorNight + (skyColorDay - skyColorNight) * daylight;
+    Vec3 curHorizon = horizonColorNight + (horizonColorDay - horizonColorNight) * daylight;
+
+    if (player.inWater) {
+        glClearColor(0.05f * daylight, 0.24f * daylight, 0.52f * daylight, 1.0f);
+    } else {
+        glClearColor(curHorizon.x, curHorizon.y, curHorizon.z, 1.0f);
+    }
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     const float fovRad = player.fov * 0.01745329252f;
@@ -979,10 +1221,15 @@ void Renderer::frame(World& world, Player& player, float time) {
     Mat4 view = matLookAt(eye, eye + player.lookDir(), {0, 1, 0});
     Mat4 vp = proj * view;
 
-    drawSunAndClouds(vp, player.pos, time);
+    drawAtmosphere(vp, player.pos, player.worldTime, time);
 
+    // 1. Opak Bloklar Çizimi
     glUseProgram(worldProg);
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, vp.m);
+    glUniform1f(glGetUniformLocation(worldProg, "uDaylight"), daylight);
+    glUniform3f(glGetUniformLocation(worldProg, "uFogColor"), curHorizon.x, curHorizon.y, curHorizon.z);
+    glUniform1f(glGetUniformLocation(worldProg, "uFogStart"), (player.renderDistance - 2) * 16.0f);
+    glUniform1f(glGetUniformLocation(worldProg, "uFogEnd"), player.renderDistance * 16.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, atlasTex);
     glUniform1i(glGetUniformLocation(worldProg, "uTexture"), 0);
@@ -990,12 +1237,33 @@ void Renderer::frame(World& world, Player& player, float time) {
     int pcx = flr(player.pos.x / CS), pcz = flr(player.pos.z / CS);
     world.streamAround(pcx, pcz, player.renderDistance, 2);
     world.trimFarChunks(pcx, pcz, player.renderDistance + 2);
+
     for (int dx = -player.renderDistance; dx <= player.renderDistance; ++dx) {
         for (int dz = -player.renderDistance; dz <= player.renderDistance; ++dz) {
             auto ch = world.getChunk(pcx + dx, pcz + dz);
             if (ch && ch->generated) {
                 if (ch->dirty) ch->buildMesh(world);
-                ch->render();
+                ch->renderOpaque();
+            }
+        }
+    }
+
+    // 2. Canlı Şeffaf Su Çizimi (Fresnel & Wave Displacement)
+    glUseProgram(waterProg);
+    glUniformMatrix4fv(glGetUniformLocation(waterProg, "uMVP"), 1, GL_FALSE, vp.m);
+    glUniform1f(glGetUniformLocation(waterProg, "uTime"), time);
+    glUniform1f(glGetUniformLocation(waterProg, "uDaylight"), daylight);
+    glUniform3f(glGetUniformLocation(waterProg, "uEyePos"), eye.x, eye.y, eye.z);
+    glUniform3f(glGetUniformLocation(waterProg, "uFogColor"), curHorizon.x, curHorizon.y, curHorizon.z);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, atlasTex);
+    glUniform1i(glGetUniformLocation(waterProg, "uTexture"), 0);
+
+    for (int dx = -player.renderDistance; dx <= player.renderDistance; ++dx) {
+        for (int dz = -player.renderDistance; dz <= player.renderDistance; ++dz) {
+            auto ch = world.getChunk(pcx + dx, pcz + dz);
+            if (ch && ch->generated) {
+                ch->renderWater();
             }
         }
     }
@@ -1006,18 +1274,20 @@ void Renderer::frame(World& world, Player& player, float time) {
 
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
-        if (e.alive) drawMob(vp, e);
+        if (e.alive) drawMob(vp, e, daylight);
     }
 
     std::lock_guard plk(world.particleMtx);
     for (const auto& p : world.particles) {
-        drawBox(vp, p.pos, {0.12f, 0.12f, 0.12f}, p.color);
+        drawBox(vp, p.pos, {p.size, p.size, p.size}, p.color);
     }
+
+    drawFirstPersonHand(proj, player, time);
 }
 
 static bool checkCollision(const World& world, Vec3 pos) {
-    float r = 0.3f;
-    float h = 1.8f;
+    float r = 0.30f;
+    float h = 1.80f;
     int minX = flr(pos.x - r), maxX = flr(pos.x + r);
     int minY = flr(pos.y),       maxY = flr(pos.y + h);
     int minZ = flr(pos.z - r), maxZ = flr(pos.z + r);
@@ -1070,7 +1340,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->renderer.init(w, h);
     gState->world->loadWorld(gState->saveDirectory);
     if (gState->world->chunks.empty()) gWorldSeed = 0x5EED1234u;
-    gState->world->streamAround(0, 0, 2, 64);
+    gState->world->streamAround(0, 0, 3, 64);
 
     int spawnY = gState->world->getHighestBlock(0, 0);
     gState->player.pos = {0.5f, static_cast<float>(spawnY) + 1.2f, 0.5f};
@@ -1086,7 +1356,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->player.inv.slots[8] = ItemStack(TNT, 64);
     loadPlayerFooter(*gState);
     gState->initialized = true;
-    LOGI("Minecraft Motoru Baslatildi. Spawn: [0, %d, 0]", spawnY);
+    LOGI("Omni Craft AAA Motoru Başlatıldı. Spawn: [0, %d, 0]", spawnY);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeResize(JNIEnv*, jclass, jint w, jint h) {
@@ -1100,24 +1370,40 @@ JNIEXPORT jboolean JNICALL Java_com_omni_craft_Engine_nativeIsInitialized(JNIEnv
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, jfloat dt) {
     if (!gState || !gState->initialized) return;
     GameState& gs = *gState;
-    float sdt = clampf(dt, 0.0f, 0.033f);
+    float sdt = clampf(dt, 0.001f, 0.033f);
     gs.time += sdt;
     gs.autoSaveTimer += sdt;
-    if(gs.player.dayNightEnabled) gs.player.worldTime=fmodf(gs.player.worldTime+sdt*20.0f,24000.0f);
+    gs.fps = 1.0f / sdt;
+
+    if (gs.player.handSwingProgress > 0.0f) {
+        gs.player.handSwingProgress -= sdt * 3.5f;
+        if (gs.player.handSwingProgress < 0.0f) gs.player.handSwingProgress = 0.0f;
+    }
+
+    if (gs.player.dayNightEnabled) {
+        gs.player.worldTime = fmodf(gs.player.worldTime + sdt * 20.0f, 24000.0f);
+    }
+
     if (gs.autoSaveTimer >= 60.0f) {
         if (gs.world) { gs.world->saveWorld(gs.saveDirectory); savePlayerFooter(gs); }
-        gs.autoSaveTimer=0.0f;
+        gs.autoSaveTimer = 0.0f;
     }
 
     uint8_t bFeet = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y), flr(gs.player.pos.z));
     uint8_t bHead = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y + 1.2f), flr(gs.player.pos.z));
+    bool wasInWater = gs.player.inWater;
     gs.player.inWater = (bFeet == WATER || bHead == WATER);
 
-    float yawRad = gs.player.yaw * (3.14159265f / 180.0f);
-    float spd = gs.player.inWater ? WALK_SPD * 0.6f : WALK_SPD;
+    if (!wasInWater && gs.player.inWater) {
+        gs.world->spawnSplashParticles(gs.player.pos);
+    }
 
-    float fwd = gs.inputZ * spd;
-    float str = gs.inputX * spd;
+    float yawRad = gs.player.yaw * (3.14159265f / 180.0f);
+    float currentSpeed = gs.player.inWater ? WALK_SPD * 0.6f : 
+                        (gs.player.sprinting ? SPRINT_SPD : (gs.player.sneaking ? SNEAK_SPD : WALK_SPD));
+
+    float fwd = gs.inputZ * currentSpeed;
+    float str = gs.inputX * currentSpeed;
 
     Vec3 moveDir = {
         sinf(yawRad) * fwd + cosf(yawRad) * str,
@@ -1128,13 +1414,13 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.vel.x = moveDir.x;
     gs.player.vel.z = moveDir.z;
 
-    // Kesintisiz Zıplama & Yüzme
+    // Yüzme ve Zıplama Fiziği
     if (gs.player.inWater) {
         if (gs.player.jumpHolding) {
             gs.player.vel.y = SWIM_VEL;
         } else {
-            gs.player.vel.y += GRAVITY * sdt * 0.2f;
-            gs.player.vel.y *= 0.85f;
+            gs.player.vel.y += GRAVITY * sdt * 0.25f;
+            gs.player.vel.y *= 0.88f;
         }
     } else {
         if (gs.player.jumpHolding && gs.player.onGround) {
@@ -1170,13 +1456,15 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
+    // Blok Kırma İşlemi
     if (gs.player.isBreaking) {
+        gs.player.handSwingProgress = 1.0f;
         auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, gs.player.lookDir(), REACH);
         if (hit.hit) {
             if (hit.block == gs.player.breakingBlock) {
                 uint8_t targetB = gs.world->blockAt(hit.block.x, hit.block.y, hit.block.z);
                 float hVal = std::max(0.2f, BD(targetB).hardness);
-                gs.player.breakProgress += sdt / (hVal * 0.8f);
+                gs.player.breakProgress += sdt / (hVal * 0.75f);
 
                 if (gs.player.breakProgress >= 1.0f) {
                     gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
@@ -1199,6 +1487,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.breakProgress = 0.0f;
     }
 
+    // Eşya Toplama
     {
         std::lock_guard lk(gs.world->entityMtx);
         for (auto& e : gs.world->entities) {
@@ -1212,7 +1501,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         }
     }
 
-    gs.world->updateEntities(sdt);
+    gs.world->updateEntities(sdt, gs.player.pos);
     gs.world->updateParticles(sdt);
     gs.renderer.frame(*gs.world, gs.player, gs.time);
 }
@@ -1221,10 +1510,11 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInput(JNIEnv*, jclass, j
     if (gState) { gState->inputX = x; gState->inputZ = z; }
 }
 
+// DÜZELTME: Y-Ekseni tersliği giderildi (dy değeri terslenerek doğru doğal bakış sağlandı)
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeCameraInput(JNIEnv*, jclass, jfloat dx, jfloat dy) {
     if (gState) {
         gState->player.yaw += dx;
-        gState->player.pitch = clampf(gState->player.pitch + dy, -89.0f, 89.0f);
+        gState->player.pitch = clampf(gState->player.pitch - dy, -89.5f, 89.5f);
     }
 }
 
@@ -1238,9 +1528,9 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetBreaking(JNIEnv*, jcl
     }
 }
 
-// Dokunulan Noktadan 3D Işınla Blok Koyma
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jclass, jfloat screenX, jfloat screenY) {
     if (!gState) return;
+    gState->player.handSwingProgress = 1.0f;
     Vec3 rayDir = getRayDirection(gState->player, screenX, screenY, gState->screenW, gState->screenH);
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, gState->player.eyeH, 0}, rayDir, REACH);
     if (hit.hit) {
@@ -1266,12 +1556,23 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetJumpState(JNIEnv*, jc
     }
 }
 
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetSneakState(JNIEnv*, jclass, jboolean holding) {
+    if (gState) gState->player.sneaking = holding;
+}
+
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetSprintState(JNIEnv*, jclass, jboolean active) {
+    if (gState) gState->player.sprinting = active;
+}
+
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSelectSlot(JNIEnv*, jclass, jint slot) {
     if (gState) gState->player.inv.selected = slot % HOTBAR_SZ;
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSaveWorld(JNIEnv*, jclass) {
-    if(gState&&gState->world){gState->world->saveWorld(gState->saveDirectory);savePlayerFooter(*gState);}
+    if (gState && gState->world) {
+        gState->world->saveWorld(gState->saveDirectory);
+        savePlayerFooter(*gState);
+    }
 }
 
 JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetInventory(JNIEnv* env, jclass) {
@@ -1285,6 +1586,22 @@ JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetInventory(JNIEnv* 
     }
     json += "]";
     return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetInventorySlot(JNIEnv*, jclass, jint slot, jint id, jint count) {
+    if (gState && slot >= 0 && slot < INV_SIZE) {
+        gState->player.inv.slots[slot] = ItemStack(static_cast<uint16_t>(id), static_cast<uint8_t>(count));
+    }
+}
+
+JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetPlayerStats(JNIEnv* env, jclass) {
+    if (!gState) return env->NewStringUTF("{}");
+    char buf[256];
+    snprintf(buf, sizeof(buf),
+             "{\"fps\":%.1f,\"x\":%.1f,\"y\":%.1f,\"z\":%.1f,\"hp\":%.1f,\"hunger\":%.1f,\"time\":%.0f}",
+             gState->fps, gState->player.pos.x, gState->player.pos.y, gState->player.pos.z,
+             gState->player.health, gState->player.hunger, gState->player.worldTime);
+    return env->NewStringUTF(buf);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetRenderDistance(JNIEnv*,jclass,jint d){if(gState)gState->player.renderDistance=std::clamp((int)d,3,RD);}
