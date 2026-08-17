@@ -27,14 +27,14 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static constexpr int CS        = 16;
-static constexpr int WH        = 256;
-static constexpr int RD        = 8;
-static constexpr float GRAVITY = -28.0f;
-static constexpr float JUMP_VEL= 9.5f;
+static constexpr int WH        = 128;
+static constexpr int RD        = 6;
+static constexpr float GRAVITY = -24.0f;
+static constexpr float JUMP_VEL= 8.2f;
 static constexpr float WALK_SPD= 4.317f;
-static constexpr float SPRINT_SPD= 5.8f;
+static constexpr float SPRINT_SPD= 6.2f;
 static constexpr float SNEAK_SPD= 1.3f;
-static constexpr float REACH   = 5.2f;
+static constexpr float REACH   = 5.5f;
 static constexpr int INV_SIZE  = 36;
 static constexpr int HOTBAR_SZ = 9;
 static constexpr int MAX_STACK = 64;
@@ -69,6 +69,7 @@ struct BlockDef {
     bool gravity;
     float hardness;
     float friction;
+    uint8_t topTile, sideTile, botTile;
     uint16_t dropId;
 };
 
@@ -90,10 +91,18 @@ struct Mat4 {
     float m[16] = {};
     Mat4 operator*(const Mat4& o) const {
         Mat4 r;
-        for(int i=0; i<4; ++i) for(int j=0; j<4; ++j) for(int k=0; k<4; ++k)
-            r.m[i*4+j] += m[i*4+k] * o.m[k*4+j];
+        for(int i=0; i<4; ++i)
+            for(int j=0; j<4; ++j)
+                for(int k=0; k<4; ++k)
+                    r.m[i*4+j] += m[i*4+k] * o.m[k*4+j];
         return r;
     }
+};
+
+struct Vertex {
+    float x, y, z;
+    float u, v;
+    float light;
 };
 
 struct ItemStack {
@@ -122,16 +131,24 @@ struct Entity {
     bool alive = true;
 };
 
+class World;
+
 struct Chunk {
     int cx, cz;
     std::array<uint8_t, CS * WH * CS> blocks;
-    std::array<uint8_t, CS * CS> heightMap;
+    std::atomic<bool> dirty{true};
     std::atomic<bool> generated{false};
 
+    GLuint vao = 0, vbo = 0;
+    GLsizei vertexCount = 0;
+
     Chunk(int x, int z);
+    ~Chunk();
     inline int idx(int x, int y, int z) const { return x * WH * CS + y * CS + z; }
     uint8_t get(int x, int y, int z) const;
     void set(int x, int y, int z, uint8_t b);
+    void buildMesh(const World& world);
+    void render();
 };
 
 class World {
@@ -165,9 +182,10 @@ public:
 };
 
 struct Player {
-    Vec3 pos{0, 80, 0}, vel{};
+    Vec3 pos{0, 75, 0}, vel{};
     float yaw = 0, pitch = 0;
     float eyeH = 1.62f;
+    bool onGround = false;
     bool sneaking = false, sprinting = false;
     Inventory inv;
     Vec3 lookDir() const {
@@ -178,15 +196,17 @@ struct Player {
 
 class Renderer {
 public:
-    GLuint cubeProg = 0;
-    GLuint cubeVAO = 0, cubeVBO = 0;
+    GLuint worldProg = 0;
+    GLuint entityProg = 0;
+    GLuint atlasTex = 0;
+    GLuint entityVAO = 0, entityVBO = 0;
     int screenW = 1920, screenH = 1080;
 
     void init(int w, int h);
     void resize(int w, int h);
-    void frame(World& world, Player& player, float time);
-    void drawBlockProcedural(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw);
-    void drawMobProcedural(const Mat4& vp, const Entity& e);
+    void frame(World& world, Player& player);
+    void generateProceduralAtlas();
+    void drawEntityBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw);
 };
 
 struct GameState {
