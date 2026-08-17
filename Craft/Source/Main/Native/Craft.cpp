@@ -2,6 +2,21 @@
 
 static char gCrashLogDir[512] = {0};
 
+static void logEngineMessage(const char* msg) {
+    if (!gCrashLogDir[0]) return;
+    char path[600];
+    snprintf(path, sizeof(path), "%s/engine.log", gCrashLogDir);
+    int fd = open(path, O_CREAT | O_WRONLY | O_APPEND, 0666);
+    if (fd >= 0) {
+        time_t rawtime; time(&rawtime);
+        struct tm* ti = localtime(&rawtime);
+        char buf[650];
+        int len = snprintf(buf, sizeof(buf), "[%02d:%02d:%02d] %s\n", ti->tm_hour, ti->tm_min, ti->tm_sec, msg);
+        write(fd, buf, len);
+        close(fd);
+    }
+}
+
 static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     char filePath[600];
     time_t rawtime;
@@ -9,7 +24,7 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     struct tm* timeinfo = localtime(&rawtime);
 
     snprintf(filePath, sizeof(filePath), "%s/crash_native_%04d%02d%02d_%02d%02d%02d.log",
-             gCrashLogDir[0] ? gCrashLogDir : "/sdcard/Documents/Craft_Log",
+             gCrashLogDir[0] ? gCrashLogDir : "/sdcard/Documents/Omni_Craft",
              timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
              timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
 
@@ -18,7 +33,7 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
         char buf[512];
         snprintf(buf, sizeof(buf),
                  "=== OMNI CRAFT CRASH REPORT ===\n"
-                 "Signal: %d, Addr: %p\n"
+                 "Signal: %d, Fault Addr: %p\n"
                  "Time: %04d-%02d-%02d %02d:%02d:%02d\n",
                  sig, info->si_addr,
                  timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
@@ -26,7 +41,7 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
         write(fd, buf, strlen(buf));
         close(fd);
     }
-    LOGE("Yerel motor çökmesi: %s", filePath);
+    LOGE("Yerel motor çökmesi yakalandı: %s", filePath);
     _exit(1);
 }
 
@@ -455,15 +470,15 @@ void World::generateChunk(Chunk& c) {
         }
     }
 
-    // DÜZELTME: Hayvanlar kesinlikle zemin bloğunun üstündeki 2 hava bloğuna yerleştirilir
+    // Mob doğma konumu (Ağaç ve blokların üstündeki temiz hava sahası)
     if ((c.cx + c.cz) % 4 == 0) {
-        int groundX = bx + 8;
-        int groundZ = bz + 8;
-        int h = flr(getTerrainHeight(static_cast<float>(groundX), static_cast<float>(groundZ)));
+        int gx = bx + 8;
+        int gz = bz + 8;
+        int h = flr(getTerrainHeight(static_cast<float>(gx), static_cast<float>(gz)));
         if (h > SEA_LEVEL + 1 && h < WH - 10) {
-            spawnMob(ENT_PIG, {groundX + 0.5f, static_cast<float>(h) + 1.05f, groundZ + 0.5f});
-            spawnMob(ENT_COW, {groundX - 3.5f, static_cast<float>(h) + 1.05f, groundZ + 2.5f});
-            spawnMob(ENT_SHEEP, {groundX + 3.5f, static_cast<float>(h) + 1.05f, groundZ - 2.5f});
+            spawnMob(ENT_PIG, {gx + 0.5f, static_cast<float>(h) + 1.05f, gz + 0.5f});
+            spawnMob(ENT_COW, {gx - 3.5f, static_cast<float>(h) + 1.05f, gz + 2.5f});
+            spawnMob(ENT_SHEEP, {gx + 3.5f, static_cast<float>(h) + 1.05f, gz - 2.5f});
         }
     }
 
@@ -682,19 +697,31 @@ World::RayHit World::raycast(Vec3 origin, Vec3 dir, float maxD) const {
     return r;
 }
 
+static constexpr uint32_t SAVE_MAGIC = 0x4F4D4E41u;
+static constexpr uint32_t SAVE_VERSION = 4;
+static constexpr uint32_t SAVE_FOOTER  = 0x504C5952u;
+
+struct PlayerFooter {
+    uint32_t magic;
+    float x, y, z, yaw, pitch, health, hunger, worldTime;
+    int32_t selected;
+    uint8_t slots[INV_SIZE][3];
+};
+
 void World::saveWorld(const std::string& path) {
     if (path.empty()) return;
     std::string file = path + "/world_save.dat";
     int fd = open(file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd < 0) return;
-    const uint32_t magic = 0x4F4D4E49u;
-    const uint32_t version = 3;
     uint32_t chunkCount = static_cast<uint32_t>(chunks.size());
-    write(fd, &magic, sizeof(magic)); write(fd, &version, sizeof(version));
-    write(fd, &gWorldSeed, sizeof(gWorldSeed)); write(fd, &chunkCount, sizeof(chunkCount));
+    write(fd, &SAVE_MAGIC, sizeof(SAVE_MAGIC));
+    write(fd, &SAVE_VERSION, sizeof(SAVE_VERSION));
+    write(fd, &gWorldSeed, sizeof(gWorldSeed));
+    write(fd, &chunkCount, sizeof(chunkCount));
     std::shared_lock lk(chunkMtx);
     for (auto& [k, ch] : chunks) {
-        write(fd, &ch->cx, sizeof(ch->cx)); write(fd, &ch->cz, sizeof(ch->cz));
+        write(fd, &ch->cx, sizeof(ch->cx));
+        write(fd, &ch->cz, sizeof(ch->cz));
         write(fd, ch->blocks.data(), ch->blocks.size());
     }
     close(fd);
@@ -708,8 +735,8 @@ void World::loadWorld(const std::string& path) {
     if (fd < 0) return;
     uint32_t magic = 0, version = 0, chunkCount = 0;
     if (read(fd, &magic, sizeof(magic)) != sizeof(magic)) { close(fd); return; }
-    if (magic == 0x4F4D4E49u) {
-        if (read(fd, &version, sizeof(version)) != sizeof(version) || version < 2 ||
+    if (magic == SAVE_MAGIC) {
+        if (read(fd, &version, sizeof(version)) != sizeof(version) || version < 3 ||
             read(fd, &gWorldSeed, sizeof(gWorldSeed)) != sizeof(gWorldSeed) ||
             read(fd, &chunkCount, sizeof(chunkCount)) != sizeof(chunkCount)) { close(fd); return; }
     } else chunkCount = magic;
@@ -725,8 +752,50 @@ void World::loadWorld(const std::string& path) {
     close(fd); LOGI("Dünya yüklendi: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
+static void savePlayerFooter(const GameState& gs){
+    if(gs.saveDirectory.empty()) return;
+    std::string f = gs.saveDirectory + "/world_save.dat";
+    int fd = open(f.c_str(), O_WRONLY | O_APPEND);
+    if(fd < 0) return;
+    PlayerFooter p{};
+    p.magic = SAVE_FOOTER;
+    p.x = gs.player.pos.x; p.y = gs.player.pos.y; p.z = gs.player.pos.z;
+    p.yaw = gs.player.yaw; p.pitch = gs.player.pitch;
+    p.health = gs.player.health; p.hunger = gs.player.hunger;
+    p.worldTime = gs.player.worldTime;
+    p.selected = gs.player.inv.selected;
+    for(int i = 0; i < INV_SIZE; ++i){
+        p.slots[i][0] = gs.player.inv.slots[i].id & 255;
+        p.slots[i][1] = (gs.player.inv.slots[i].id >> 8) & 255;
+        p.slots[i][2] = gs.player.inv.slots[i].count;
+    }
+    write(fd, &p, sizeof(p));
+    close(fd);
+}
+
+static bool loadPlayerFooter(GameState& gs){
+    if(gs.saveDirectory.empty()) return false;
+    std::string f = gs.saveDirectory + "/world_save.dat";
+    int fd = open(f.c_str(), O_RDONLY);
+    if(fd < 0) return false;
+    PlayerFooter p{};
+    if(lseek(fd, -(off_t)sizeof(p), SEEK_END) < 0 || read(fd, &p, sizeof(p)) != (ssize_t)sizeof(p)){ close(fd); return false; }
+    close(fd);
+    if(p.magic != SAVE_FOOTER) return false;
+    gs.player.pos = {p.x, p.y, p.z};
+    gs.player.yaw = p.yaw; gs.player.pitch = p.pitch;
+    gs.player.health = p.health > 0.0f ? p.health : 20.0f;
+    gs.player.hunger = p.hunger > 0.0f ? p.hunger : 20.0f;
+    gs.player.worldTime = fmodf(p.worldTime, 24000.0f);
+    gs.player.inv.selected = std::clamp(p.selected, 0, HOTBAR_SZ - 1);
+    for(int i = 0; i < INV_SIZE; ++i){
+        uint16_t id = (uint16_t)p.slots[i][0] | ((uint16_t)p.slots[i][1] << 8);
+        gs.player.inv.slots[i] = ItemStack(id, p.slots[i][2]);
+    }
+    return true;
+}
+
 void Renderer::generateTextures() {
-    // 1. Ana Doku Atlası (128x128)
     const int AT_SZ = 128;
     std::vector<uint32_t> pixels(AT_SZ * AT_SZ);
 
@@ -814,7 +883,7 @@ void Renderer::generateTextures() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    // 2. Minecraft Tarzı 10 Kademeli Çatlak Dokusu (Crack Texture Atlas 320x32)
+    // 10 Kademeli Çatlak Dokusu (Crack Atlas 320x32)
     std::vector<uint32_t> crackPixels(320 * 32, makeRGBA(0, 0, 0, 0));
     for (int stage = 0; stage < 10; ++stage) {
         int startX = stage * 32;
@@ -937,17 +1006,12 @@ void main(){
 
 static const char* VS_CRACK = R"(#version 300 es
 layout(location=0) in vec3 aPos;
-layout(location=1) in vec3 aNorm;
+layout(location=1) in vec2 aUV;
 uniform mat4 uMVP;
 uniform float uStage;
 out vec2 vCrackUV;
 void main(){
-    vec3 n = abs(aNorm);
-    vec2 uv = vec2(0.0);
-    if(n.x > 0.5) uv = aPos.yz + vec2(0.5);
-    else if(n.y > 0.5) uv = aPos.xz + vec2(0.5);
-    else uv = aPos.xy + vec2(0.5);
-    vCrackUV = vec2((uv.x + uStage) / 10.0, uv.y);
+    vCrackUV = vec2((aUV.x + uStage) / 10.0, aUV.y);
     gl_Position = uMVP * vec4(aPos, 1.0);
 })";
 
@@ -1075,14 +1139,65 @@ void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float y
     glBindVertexArray(0);
 }
 
-void Renderer::drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw) {
+void Renderer::drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw, float pitch, float roll) {
+    if (blockId == AIR || blockId >= BLOCK_COUNT) return;
+    const BlockDef& def = BD(blockId);
+
+    std::vector<Vertex> verts;
+    verts.reserve(36);
+
+    auto addFace = [&](int tile, float light,
+                       float x0, float y0, float z0,
+                       float x1, float y1, float z1,
+                       float x2, float y2, float z2,
+                       float x3, float y3, float z3) {
+        float tx = (tile % 4) * 0.25f;
+        float ty = (tile / 4) * 0.25f;
+        float tw = 0.25f;
+        verts.push_back({x0, y0, z0, tx, ty+tw, light, 1.0f});
+        verts.push_back({x1, y1, z1, tx+tw, ty+tw, light, 1.0f});
+        verts.push_back({x2, y2, z2, tx+tw, ty, light, 1.0f});
+        verts.push_back({x0, y0, z0, tx, ty+tw, light, 1.0f});
+        verts.push_back({x2, y2, z2, tx+tw, ty, light, 1.0f});
+        verts.push_back({x3, y3, z3, tx, ty, light, 1.0f});
+    };
+
+    // +Y
+    addFace(def.topTile, 1.0f, -0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, -0.5f);
+    // -Y
+    addFace(def.botTile, 0.55f, -0.5f, -0.5f, 0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f);
+    // +Z
+    addFace(def.sideTile, 0.85f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f);
+    // -Z
+    addFace(def.sideTile, 0.85f, 0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f);
+    // +X
+    addFace(def.sideTile, 0.72f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f, 0.5f);
+    // -X
+    addFace(def.sideTile, 0.72f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, -0.5f);
+
     Mat4 model = Mat4::identity();
-    float radY = yaw * 0.01745329f;
-    model.m[0]  = scale.x * cosf(radY); model.m[2]  = scale.x * sinf(radY);
-    model.m[5]  = scale.y;
-    model.m[8]  = scale.z * -sinf(radY); model.m[10] = scale.z * cosf(radY);
+    float ry = yaw * 0.01745329f;
+    float rp = pitch * 0.01745329f;
+    model.m[0]  = scale.x * cosf(ry); model.m[2]  = scale.x * sinf(ry);
+    model.m[5]  = scale.y * cosf(rp); model.m[6]  = scale.y * sinf(rp);
+    model.m[8]  = scale.z * -sinf(ry); model.m[10] = scale.z * cosf(ry);
     model.m[12] = pos.x; model.m[13] = pos.y; model.m[14] = pos.z; model.m[15] = 1.0f;
     Mat4 mvp = vp * model;
+
+    GLuint vao = 0, vbo = 0;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, verts.size() * sizeof(Vertex), verts.data(), GL_STREAM_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, x));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, u));
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, light));
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 1, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, ao));
 
     glUseProgram(worldProg);
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, mvp.m);
@@ -1094,35 +1209,71 @@ void Renderer::drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t bl
     glBindTexture(GL_TEXTURE_2D, atlasTex);
     glUniform1i(glGetUniformLocation(worldProg, "uTexture"), 0);
 
-    glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
+
     glBindVertexArray(0);
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
 }
 
-void Renderer::drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress) {
+void Renderer::drawTargetedFaceCrack(const Mat4& vp, Vec3i pos, Vec3i face, float progress) {
     if (progress <= 0.0f) return;
-    
+    int stage = std::clamp(static_cast<int>(progress * 10.0f), 0, 9);
+
+    float off = 0.003f;
+    float fx = static_cast<float>(pos.x);
+    float fy = static_cast<float>(pos.y);
+    float fz = static_cast<float>(pos.z);
+
+    struct QuadV { float x, y, z, u, v; };
+    QuadV q[6];
+
+    if (face.y == 1) { // Top
+        q[0] = {fx+0, fy+1+off, fz+0, 0, 1}; q[1] = {fx+0, fy+1+off, fz+1, 1, 1}; q[2] = {fx+1, fy+1+off, fz+1, 1, 0};
+        q[3] = {fx+0, fy+1+off, fz+0, 0, 1}; q[4] = {fx+1, fy+1+off, fz+1, 1, 0}; q[5] = {fx+1, fy+1+off, fz+0, 0, 0};
+    } else if (face.y == -1) { // Bottom
+        q[0] = {fx+0, fy-off, fz+1, 0, 1}; q[1] = {fx+0, fy-off, fz+0, 1, 1}; q[2] = {fx+1, fy-off, fz+0, 1, 0};
+        q[3] = {fx+0, fy-off, fz+1, 0, 1}; q[4] = {fx+1, fy-off, fz+0, 1, 0}; q[5] = {fx+1, fy-off, fz+1, 0, 0};
+    } else if (face.z == 1) { // Front
+        q[0] = {fx+0, fy+0, fz+1+off, 0, 1}; q[1] = {fx+1, fy+0, fz+1+off, 1, 1}; q[2] = {fx+1, fy+1, fz+1+off, 1, 0};
+        q[3] = {fx+0, fy+0, fz+1+off, 0, 1}; q[4] = {fx+1, fy+1, fz+1+off, 1, 0}; q[5] = {fx+0, fy+1, fz+1+off, 0, 0};
+    } else if (face.z == -1) { // Back
+        q[0] = {fx+1, fy+0, fz-off, 0, 1}; q[1] = {fx+0, fy+0, fz-off, 1, 1}; q[2] = {fx+0, fy+1, fz-off, 1, 0};
+        q[3] = {fx+1, fy+0, fz-off, 0, 1}; q[4] = {fx+0, fy+1, fz-off, 1, 0}; q[5] = {fx+1, fy+1, fz-off, 0, 0};
+    } else if (face.x == 1) { // Right
+        q[0] = {fx+1+off, fy+0, fz+1, 0, 1}; q[1] = {fx+1+off, fy+0, fz+0, 1, 1}; q[2] = {fx+1+off, fy+1, fz+0, 1, 0};
+        q[3] = {fx+1+off, fy+0, fz+1, 0, 1}; q[4] = {fx+1+off, fy+1, fz+0, 1, 0}; q[5] = {fx+1+off, fy+1, fz+1, 0, 0};
+    } else { // Left
+        q[0] = {fx-off, fy+0, fz+0, 0, 1}; q[1] = {fx-off, fy+0, fz+1, 1, 1}; q[2] = {fx-off, fy+1, fz+1, 1, 0};
+        q[3] = {fx-off, fy+0, fz+0, 0, 1}; q[4] = {fx-off, fy+1, fz+1, 1, 0}; q[5] = {fx-off, fy+1, fz+0, 0, 0};
+    }
+
     glDepthFunc(GL_LEQUAL);
     glDepthMask(GL_FALSE);
 
-    int stage = std::clamp(static_cast<int>(progress * 10.0f), 0, 9);
-
-    Mat4 model = Mat4::identity();
-    float expand = 1.004f;
-    model.m[0] = expand; model.m[5] = expand; model.m[10] = expand;
-    model.m[12] = pos.x + 0.5f; model.m[13] = pos.y + 0.5f; model.m[14] = pos.z + 0.5f;
-    Mat4 mvp = vp * model;
+    GLuint vao = 0, vbo = 0;
+    glGenVertexArrays(1, &vao);
+    glGenBuffers(1, &vbo);
+    glBindVertexArray(vao);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(q), q, GL_STREAM_DRAW);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(QuadV), (void*)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(QuadV), (void*)12);
 
     glUseProgram(crackProg);
-    glUniformMatrix4fv(glGetUniformLocation(crackProg, "uMVP"), 1, GL_FALSE, mvp.m);
+    glUniformMatrix4fv(glGetUniformLocation(crackProg, "uMVP"), 1, GL_FALSE, vp.m);
     glUniform1f(glGetUniformLocation(crackProg, "uStage"), static_cast<float>(stage));
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, crackTex);
     glUniform1i(glGetUniformLocation(crackProg, "uCrackTexture"), 0);
 
-    glBindVertexArray(boxVAO);
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+
     glBindVertexArray(0);
+    glDeleteBuffers(1, &vbo);
+    glDeleteVertexArrays(1, &vao);
 
     glDepthMask(GL_TRUE);
     glDepthFunc(GL_LESS);
@@ -1163,6 +1314,7 @@ void Renderer::drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, f
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
 
+    // 3B Hacimsel & Boşluklu Bulut Örtüsü
     float cloudShift = fmodf(time * 2.2f, 96.0f);
     int cx = flr(playerPos.x / 48.0f);
     int cz = flr(playerPos.z / 48.0f);
@@ -1170,6 +1322,8 @@ void Renderer::drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, f
 
     for (int dx = -4; dx <= 4; ++dx) {
         for (int dz = -4; dz <= 4; ++dz) {
+            float density = hash2D(cx + dx, cz + dz);
+            if (density < 0.35f) continue;
             Vec3 cpos{(cx + dx) * 48.0f + cloudShift, 108.0f, (cz + dz) * 48.0f};
             Mat4 cm = Mat4::identity();
             cm.m[0] = 42.0f; cm.m[5] = 6.5f; cm.m[10] = 42.0f;
@@ -1198,22 +1352,17 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
     if (e.type == ENT_PIG) {
         Vec3 pink{0.96f, 0.65f, 0.65f};
         Vec3 snoutCol{0.92f, 0.48f, 0.48f};
-        // Gövde
         drawBox(vp, e.pos + Vec3{0, 0.6f, 0}, {0.9f, 0.7f, 1.2f}, pink, e.yaw);
-        // Kafa
         Vec3 headPos = e.pos + Vec3{sinf(headRad)*0.65f, 0.85f, -cosf(headRad)*0.65f};
         drawBox(vp, headPos, {0.6f, 0.6f, 0.6f}, pink, e.headYaw);
-        // Burun
         Vec3 snoutPos = headPos + Vec3{sinf(headRad)*0.32f, -0.08f, -cosf(headRad)*0.32f};
         drawBox(vp, snoutPos, {0.3f, 0.2f, 0.2f}, snoutCol, e.headYaw);
-        // Gözler (Beyaz ve Gözbebeği)
         Vec3 eyeL = headPos + Vec3{cosf(headRad)*0.31f + sinf(headRad)*0.20f, 0.10f, sinf(headRad)*0.31f - cosf(headRad)*0.20f};
         Vec3 eyeR = headPos + Vec3{-cosf(headRad)*0.31f + sinf(headRad)*0.20f, 0.10f, -sinf(headRad)*0.31f - cosf(headRad)*0.20f};
         drawBox(vp, eyeL, {0.08f, 0.08f, 0.08f}, eyeWhite, e.headYaw);
         drawBox(vp, eyeR, {0.08f, 0.08f, 0.08f}, eyeWhite, e.headYaw);
         drawBox(vp, eyeL + Vec3{sinf(headRad)*0.03f, 0, -cosf(headRad)*0.03f}, {0.05f, 0.05f, 0.05f}, pupilBlack, e.headYaw);
         drawBox(vp, eyeR + Vec3{sinf(headRad)*0.03f, 0, -cosf(headRad)*0.03f}, {0.05f, 0.05f, 0.05f}, pupilBlack, e.headYaw);
-        // Bacaklar
         drawBox(vp, e.pos + Vec3{-0.25f, 0.25f, -0.35f}, {0.25f, 0.5f, 0.25f}, pink, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.25f, 0.25f, -0.35f},  {0.25f, 0.5f, 0.25f}, pink, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{-0.25f, 0.25f, 0.35f},  {0.25f, 0.5f, 0.25f}, pink, e.yaw, -legAngle);
@@ -1222,25 +1371,19 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
         Vec3 cowCol{0.40f, 0.25f, 0.15f};
         Vec3 hornCol{0.90f, 0.90f, 0.85f};
         Vec3 snoutCol{0.78f, 0.62f, 0.60f};
-        // Gövde
         drawBox(vp, e.pos + Vec3{0, 0.85f, 0}, {1.05f, 1.0f, 1.45f}, cowCol, e.yaw);
-        // Kafa
         Vec3 headPos = e.pos + Vec3{sinf(headRad)*0.80f, 1.15f, -cosf(headRad)*0.80f};
         drawBox(vp, headPos, {0.6f, 0.6f, 0.6f}, cowCol, e.headYaw);
-        // Burun
         Vec3 snoutPos = headPos + Vec3{sinf(headRad)*0.32f, -0.10f, -cosf(headRad)*0.32f};
         drawBox(vp, snoutPos, {0.4f, 0.25f, 0.25f}, snoutCol, e.headYaw);
-        // Boynuzlar
         drawBox(vp, headPos + Vec3{cosf(headRad)*0.32f, 0.35f, sinf(headRad)*0.32f}, {0.12f, 0.22f, 0.12f}, hornCol, e.headYaw);
         drawBox(vp, headPos + Vec3{-cosf(headRad)*0.32f, 0.35f, -sinf(headRad)*0.32f}, {0.12f, 0.22f, 0.12f}, hornCol, e.headYaw);
-        // Gözler
         Vec3 eyeL = headPos + Vec3{cosf(headRad)*0.31f + sinf(headRad)*0.18f, 0.12f, sinf(headRad)*0.31f - cosf(headRad)*0.18f};
         Vec3 eyeR = headPos + Vec3{-cosf(headRad)*0.31f + sinf(headRad)*0.18f, 0.12f, -sinf(headRad)*0.31f - cosf(headRad)*0.18f};
         drawBox(vp, eyeL, {0.08f, 0.08f, 0.08f}, eyeWhite, e.headYaw);
         drawBox(vp, eyeR, {0.08f, 0.08f, 0.08f}, eyeWhite, e.headYaw);
         drawBox(vp, eyeL + Vec3{sinf(headRad)*0.03f, 0, -cosf(headRad)*0.03f}, {0.05f, 0.05f, 0.05f}, pupilBlack, e.headYaw);
         drawBox(vp, eyeR + Vec3{sinf(headRad)*0.03f, 0, -cosf(headRad)*0.03f}, {0.05f, 0.05f, 0.05f}, pupilBlack, e.headYaw);
-        // Bacaklar
         drawBox(vp, e.pos + Vec3{-0.3f, 0.3f, -0.4f}, {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.3f, 0.3f, -0.4f},  {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{-0.3f, 0.3f, 0.4f},  {0.28f, 0.6f, 0.28f}, cowCol, e.yaw, -legAngle);
@@ -1248,19 +1391,15 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
     } else if (e.type == ENT_SHEEP) {
         Vec3 wool{0.94f, 0.94f, 0.94f};
         Vec3 headSkin{0.86f, 0.76f, 0.70f};
-        // Gövde
         drawBox(vp, e.pos + Vec3{0, 0.78f, 0}, {1.15f, 0.95f, 1.35f}, wool, e.yaw);
-        // Kafa
         Vec3 headPos = e.pos + Vec3{sinf(headRad)*0.72f, 0.98f, -cosf(headRad)*0.72f};
         drawBox(vp, headPos, {0.55f, 0.55f, 0.55f}, headSkin, e.headYaw);
-        // Gözler
         Vec3 eyeL = headPos + Vec3{cosf(headRad)*0.28f + sinf(headRad)*0.16f, 0.08f, sinf(headRad)*0.28f - cosf(headRad)*0.16f};
         Vec3 eyeR = headPos + Vec3{-cosf(headRad)*0.28f + sinf(headRad)*0.16f, 0.08f, -sinf(headRad)*0.28f - cosf(headRad)*0.16f};
         drawBox(vp, eyeL, {0.07f, 0.07f, 0.07f}, eyeWhite, e.headYaw);
         drawBox(vp, eyeR, {0.07f, 0.07f, 0.07f}, eyeWhite, e.headYaw);
         drawBox(vp, eyeL + Vec3{sinf(headRad)*0.02f, 0, -cosf(headRad)*0.02f}, {0.04f, 0.04f, 0.04f}, pupilBlack, e.headYaw);
         drawBox(vp, eyeR + Vec3{sinf(headRad)*0.02f, 0, -cosf(headRad)*0.02f}, {0.04f, 0.04f, 0.04f}, pupilBlack, e.headYaw);
-        // Bacaklar
         drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, -0.38f}, {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
         drawBox(vp, e.pos + Vec3{0.28f, 0.3f, -0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
         drawBox(vp, e.pos + Vec3{-0.28f, 0.3f, 0.38f},  {0.24f, 0.6f, 0.24f}, wool, e.yaw, -legAngle);
@@ -1268,22 +1407,86 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
     } else if (e.type == ENT_ITEM_DROP) {
         float bob = sinf(e.animTime * 3.8f) * 0.12f;
         uint8_t dropBlock = (e.itemId < BLOCK_COUNT && e.itemId > 0) ? static_cast<uint8_t>(e.itemId) : OAK_PLANKS;
-        drawTexturedCube(vp, e.pos + Vec3{0, 0.25f + bob, 0}, {0.32f, 0.32f, 0.32f}, dropBlock, e.animTime * 95.0f);
+        drawTexturedCube(vp, e.pos + Vec3{0, 0.25f + bob, 0}, {0.32f, 0.32f, 0.32f}, dropBlock, e.animTime * 95.0f, 15.0f, 0.0f);
     }
     glEnable(GL_CULL_FACE);
 }
 
-void Renderer::drawFirstPersonHand(const Mat4& proj, const Player& player, float time) {
+// 10 Parçalı Karakter Modeli
+void Renderer::drawCharacterModel(const Mat4& vp, Vec3 pos, float yaw, float pitch, float animTime, float walkSpeed, uint8_t heldBlockId, float swingProgress) {
+    glDisable(GL_CULL_FACE);
+    glEnable(GL_DEPTH_TEST);
+    float rad = yaw * 0.01745329f;
+    float legAngle = sinf(animTime * 8.0f) * 32.0f * walkSpeed;
+    float armAngle = sinf(animTime * 8.0f) * 32.0f * walkSpeed;
+
+    Vec3 skinColor{0.88f, 0.68f, 0.52f};
+    Vec3 shirtColor{0.15f, 0.60f, 0.75f};
+    Vec3 pantsColor{0.18f, 0.28f, 0.62f};
+    Vec3 eyeWhite{0.96f, 0.96f, 0.96f};
+    Vec3 pupilColor{0.12f, 0.15f, 0.50f};
+    Vec3 mouthColor{0.60f, 0.20f, 0.20f};
+
+    // 1. Gövde (Torso)
+    drawBox(vp, pos + Vec3{0, 0.85f, 0}, {0.55f, 0.70f, 0.30f}, shirtColor, yaw);
+
+    // 2. Kafa (Head)
+    Vec3 headPos = pos + Vec3{0, 1.45f, 0};
+    drawBox(vp, headPos, {0.45f, 0.45f, 0.45f}, skinColor, yaw, pitch);
+
+    // 3 & 4. Gözler (Left & Right Eyes)
+    Vec3 eyeL = headPos + Vec3{sinf(rad)*0.24f + cosf(rad)*0.12f, 0.08f, -cosf(rad)*0.24f + sinf(rad)*0.12f};
+    Vec3 eyeR = headPos + Vec3{sinf(rad)*0.24f - cosf(rad)*0.12f, 0.08f, -cosf(rad)*0.24f - sinf(rad)*0.12f};
+    drawBox(vp, eyeL, {0.08f, 0.08f, 0.04f}, eyeWhite, yaw, pitch);
+    drawBox(vp, eyeR, {0.08f, 0.08f, 0.04f}, eyeWhite, yaw, pitch);
+    drawBox(vp, eyeL + Vec3{sinf(rad)*0.02f, 0, -cosf(rad)*0.02f}, {0.05f, 0.05f, 0.02f}, pupilColor, yaw, pitch);
+    drawBox(vp, eyeR + Vec3{sinf(rad)*0.02f, 0, -cosf(rad)*0.02f}, {0.05f, 0.05f, 0.02f}, pupilColor, yaw, pitch);
+
+    // 5. Burun (Nose)
+    Vec3 nosePos = headPos + Vec3{sinf(rad)*0.25f, 0.0f, -cosf(rad)*0.25f};
+    drawBox(vp, nosePos, {0.08f, 0.08f, 0.06f}, skinColor * 0.9f, yaw, pitch);
+
+    // 6. Ağız (Mouth)
+    Vec3 mouthPos = headPos + Vec3{sinf(rad)*0.24f, -0.10f, -cosf(rad)*0.24f};
+    drawBox(vp, mouthPos, {0.18f, 0.05f, 0.04f}, mouthColor, yaw, pitch);
+
+    // 7. Sol Kol (Left Arm)
+    Vec3 armLPos = pos + Vec3{cosf(rad)*0.38f, 0.85f, sinf(rad)*0.38f};
+    drawBox(vp, armLPos, {0.20f, 0.65f, 0.20f}, shirtColor, yaw, armAngle);
+
+    // 8. Sağ Kol (Right Arm - Blok Tutan ve Sallanan El)
+    float swing = sinf(swingProgress * 3.1415926f) * 45.0f;
+    Vec3 armRPos = pos + Vec3{-cosf(rad)*0.38f, 0.85f, -sinf(rad)*0.38f};
+    drawBox(vp, armRPos, {0.20f, 0.65f, 0.20f}, shirtColor, yaw, -armAngle - swing);
+
+    if (heldBlockId > AIR && heldBlockId < BLOCK_COUNT) {
+        Vec3 handBlockPos = armRPos + Vec3{sinf(rad)*0.25f, -0.35f, -cosf(rad)*0.25f};
+        drawTexturedCube(vp, handBlockPos, {0.25f, 0.25f, 0.25f}, heldBlockId, yaw + 45.0f, -swing);
+    }
+
+    // 9. Sol Bacak (Left Leg)
+    Vec3 legLPos = pos + Vec3{cosf(rad)*0.14f, 0.35f, sinf(rad)*0.14f};
+    drawBox(vp, legLPos, {0.22f, 0.70f, 0.22f}, pantsColor, yaw, -legAngle);
+
+    // 10. Sağ Bacak (Right Leg)
+    Vec3 legRPos = pos + Vec3{-cosf(rad)*0.14f, 0.35f, -sinf(rad)*0.14f};
+    drawBox(vp, legRPos, {0.22f, 0.70f, 0.22f}, pantsColor, yaw, legAngle);
+
+    glEnable(GL_CULL_FACE);
+}
+
+// Birinci Şahıs El ve Tutulan Blok Ön İzleme Çizimi
+void Renderer::drawFirstPersonHandAndItem(const Mat4& proj, const Player& player, float time) {
     glDisable(GL_DEPTH_TEST);
-    float swing = sinf(player.handSwingProgress * 3.1415926f) * 0.35f;
+    float swing = sinf(player.handSwingProgress * 3.1415926f);
     float bobX = cosf(time * 6.0f) * 0.015f * (player.vel.len() > 0.1f ? 1.0f : 0.2f);
     float bobY = fabsf(sinf(time * 6.0f)) * 0.015f * (player.vel.len() > 0.1f ? 1.0f : 0.2f);
 
     Mat4 handModel = Mat4::identity();
-    handModel.m[0] = 0.22f; handModel.m[5] = 0.45f; handModel.m[10] = 0.22f;
-    handModel.m[12] = 0.42f + bobX + swing * 0.1f;
-    handModel.m[13] = -0.38f - bobY - swing * 0.2f;
-    handModel.m[14] = -0.65f - swing * 0.2f;
+    handModel.m[0] = 0.20f; handModel.m[5] = 0.45f; handModel.m[10] = 0.20f;
+    handModel.m[12] = 0.42f + bobX - swing * 0.08f;
+    handModel.m[13] = -0.38f - bobY - swing * 0.20f;
+    handModel.m[14] = -0.65f - swing * 0.15f;
 
     glUseProgram(entityProg);
     glUniformMatrix4fv(glGetUniformLocation(entityProg, "uMVP"), 1, GL_FALSE, handModel.m);
@@ -1293,6 +1496,13 @@ void Renderer::drawFirstPersonHand(const Mat4& proj, const Player& player, float
     glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
+
+    // Elin Ucunda Tutulan 3B Blok
+    const ItemStack& held = player.inv.slots[player.inv.selected % HOTBAR_SZ];
+    if (!held.empty() && held.id > AIR && held.id < BLOCK_COUNT) {
+        Vec3 blockPos = {0.32f + bobX - swing * 0.08f, -0.22f - bobY - swing * 0.20f, -0.55f - swing * 0.15f};
+        drawTexturedCube(proj, blockPos, {0.26f, 0.26f, 0.26f}, (uint8_t)held.id, 45.0f + swing * 25.0f, -20.0f, 0.0f);
+    }
     glEnable(GL_DEPTH_TEST);
 }
 
@@ -1324,7 +1534,7 @@ void Renderer::frame(World& world, Player& player, float time) {
 
     drawAtmosphere(vp, player.pos, player.worldTime, time);
 
-    // 1. Opak Voxel Çizimi
+    // 1. Opak Voxel Bloklar
     glUseProgram(worldProg);
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, vp.m);
     glUniform1f(glGetUniformLocation(worldProg, "uDaylight"), daylight);
@@ -1349,7 +1559,7 @@ void Renderer::frame(World& world, Player& player, float time) {
         }
     }
 
-    // 2. Canlı Su Katmanı
+    // 2. Canlı Su Yüzeyi
     glUseProgram(waterProg);
     glUniformMatrix4fv(glGetUniformLocation(waterProg, "uMVP"), 1, GL_FALSE, vp.m);
     glUniform1f(glGetUniformLocation(waterProg, "uTime"), time);
@@ -1369,12 +1579,12 @@ void Renderer::frame(World& world, Player& player, float time) {
         }
     }
 
-    // 3. Blok Kırılma Animasyonu & Çatlaklar
+    // 3. Sadece Baktığımız Yüzeyde Kırılma Çatlak Animasyonu
     if (player.isBreaking && player.breakProgress > 0.0f) {
-        drawBreakingOverlay(vp, player.breakingBlock, player.breakProgress);
+        drawTargetedFaceCrack(vp, player.breakingBlock, player.breakingFace, player.breakProgress);
     }
 
-    // 4. Canlı Moblar
+    // 4. Moblar ve Düşen 3B Bloklar
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
         if (e.alive) drawMob(vp, e, daylight);
@@ -1386,7 +1596,8 @@ void Renderer::frame(World& world, Player& player, float time) {
         drawBox(vp, p.pos, {p.size, p.size, p.size}, p.color);
     }
 
-    drawFirstPersonHand(proj, player, time);
+    // 6. Birinci Şahıs El ve Tutulan Eşya
+    drawFirstPersonHandAndItem(proj, player, time);
 }
 
 static bool checkCollision(const World& world, Vec3 pos) {
@@ -1407,11 +1618,6 @@ static bool checkCollision(const World& world, Vec3 pos) {
     return false;
 }
 
-static constexpr uint32_t SAVE_FOOTER=0x504C5952u;
-struct PlayerFooter { uint32_t magic; float x,y,z,yaw,pitch,worldTime; int32_t selected; uint8_t slots[INV_SIZE][3]; };
-static void savePlayerFooter(const GameState& gs){ if(gs.saveDirectory.empty())return; std::string f=gs.saveDirectory+"/world_save.dat"; int fd=open(f.c_str(),O_WRONLY|O_APPEND); if(fd<0)return; PlayerFooter p{}; p.magic=SAVE_FOOTER; p.x=gs.player.pos.x;p.y=gs.player.pos.y;p.z=gs.player.pos.z;p.yaw=gs.player.yaw;p.pitch=gs.player.pitch;p.worldTime=gs.player.worldTime;p.selected=gs.player.inv.selected; for(int i=0;i<INV_SIZE;++i){p.slots[i][0]=gs.player.inv.slots[i].id&255;p.slots[i][1]=(gs.player.inv.slots[i].id>>8)&255;p.slots[i][2]=gs.player.inv.slots[i].count;} write(fd,&p,sizeof(p)); close(fd); }
-static bool loadPlayerFooter(GameState& gs){ if(gs.saveDirectory.empty())return false; std::string f=gs.saveDirectory+"/world_save.dat"; int fd=open(f.c_str(),O_RDONLY); if(fd<0)return false; PlayerFooter p{}; if(lseek(fd,-(off_t)sizeof(p),SEEK_END)<0||read(fd,&p,sizeof(p))!=(ssize_t)sizeof(p)){close(fd);return false;} close(fd); if(p.magic!=SAVE_FOOTER)return false; gs.player.pos={p.x,p.y,p.z};gs.player.yaw=p.yaw;gs.player.pitch=p.pitch;gs.player.worldTime=fmodf(p.worldTime,24000.0f);gs.player.inv.selected=std::clamp(p.selected,0,HOTBAR_SZ-1);for(int i=0;i<INV_SIZE;++i){uint16_t id=(uint16_t)p.slots[i][0]|((uint16_t)p.slots[i][1]<<8);gs.player.inv.slots[i]=ItemStack(id,p.slots[i][2]);}return true;}
-
 static GameState* gState = nullptr;
 
 extern "C" {
@@ -1429,6 +1635,8 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetupCrashHandler(JNIEnv
     sigaction(SIGBUS,  &sa, nullptr);
     sigaction(SIGFPE,  &sa, nullptr);
     sigaction(SIGILL,  &sa, nullptr);
+
+    logEngineMessage("Omni Craft Motoru ve Loglama Başlatıldı.");
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass, jint w, jint h, jstring saveDir) {
@@ -1443,12 +1651,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->world->worldPath = gState->saveDirectory;
     gState->renderer.init(w, h);
     gState->world->loadWorld(gState->saveDirectory);
-    if (gState->world->chunks.empty()) gWorldSeed = 0x5EED1234u;
-    gState->world->streamAround(0, 0, 3, 64);
 
-    int spawnY = gState->world->getHighestBlock(0, 0);
-    gState->player.pos = {0.5f, static_cast<float>(spawnY) + 1.2f, 0.5f};
-    
     gState->player.inv.slots[0] = ItemStack(OAK_PLANKS, 64);
     gState->player.inv.slots[1] = ItemStack(COBBLESTONE, 64);
     gState->player.inv.slots[2] = ItemStack(DIAMOND_ORE, 64);
@@ -1458,9 +1661,19 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->player.inv.slots[6] = ItemStack(DIRT, 64);
     gState->player.inv.slots[7] = ItemStack(OAK_LOG, 64);
     gState->player.inv.slots[8] = ItemStack(TNT, 64);
-    loadPlayerFooter(*gState);
+
+    bool loaded = loadPlayerFooter(*gState);
+    if (!loaded || gState->player.pos.y < 5.0f) {
+        int spawnY = gState->world->getHighestBlock(0, 0);
+        gState->player.pos = {0.5f, static_cast<float>(spawnY) + 1.2f, 0.5f};
+    }
+
+    int pcx = flr(gState->player.pos.x / CS);
+    int pcz = flr(gState->player.pos.z / CS);
+    gState->world->streamAround(pcx, pcz, 3, 128);
+
     gState->initialized = true;
-    LOGI("Omni Craft Motoru Başlatıldı. Spawn: [0, %d, 0]", spawnY);
+    LOGI("Motor Başlatıldı. Konum: [%.1f, %.1f, %.1f]", gState->player.pos.x, gState->player.pos.y, gState->player.pos.z);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeResize(JNIEnv*, jclass, jint w, jint h) {
@@ -1480,7 +1693,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.fps = 1.0f / sdt;
 
     if (gs.player.handSwingProgress > 0.0f) {
-        gs.player.handSwingProgress -= sdt * 3.5f;
+        gs.player.handSwingProgress -= sdt * 4.0f;
         if (gs.player.handSwingProgress < 0.0f) gs.player.handSwingProgress = 0.0f;
     }
 
@@ -1488,7 +1701,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.worldTime = fmodf(gs.player.worldTime + sdt * 20.0f, 24000.0f);
     }
 
-    if (gs.autoSaveTimer >= 60.0f) {
+    if (gs.autoSaveTimer >= 45.0f) {
         if (gs.world) { gs.world->saveWorld(gs.saveDirectory); savePlayerFooter(gs); }
         gs.autoSaveTimer = 0.0f;
     }
@@ -1500,6 +1713,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     if (!wasInWater && gs.player.inWater) {
         gs.world->spawnSplashParticles(gs.player.pos);
+        gs.player.fallStartY = 0.0f;
     }
 
     float yawRad = gs.player.yaw * (3.14159265f / 180.0f);
@@ -1517,8 +1731,21 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.vel.x = moveDir.x;
     gs.player.vel.z = moveDir.z;
 
-    // Yürüme & Zıplama & Yüzme
+    // Yürürken Açlık Tüketimi
+    if (moveDir.len() > 0.1f) {
+        gs.player.hunger = std::max(0.0f, gs.player.hunger - sdt * 0.025f);
+    }
+
+    // Can Yenilenmesi veya Açlıktan Ölme
+    if (gs.player.hunger > 17.0f && gs.player.health < 20.0f) {
+        gs.player.health = std::min(20.0f, gs.player.health + sdt * 0.45f);
+    } else if (gs.player.hunger <= 0.0f) {
+        gs.player.health = std::max(0.0f, gs.player.health - sdt * 0.60f);
+    }
+
+    // Yürürken Kesintisiz Zıplama & Düşme Takibi
     if (gs.player.inWater) {
+        gs.player.fallStartY = 0.0f;
         if (gs.player.jumpHolding) {
             gs.player.vel.y = SWIM_VEL;
         } else {
@@ -1526,9 +1753,15 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
             gs.player.vel.y *= 0.88f;
         }
     } else {
+        if (!gs.player.onGround) {
+            if (gs.player.fallStartY <= 0.0f || gs.player.vel.y >= 0.0f) {
+                gs.player.fallStartY = gs.player.pos.y;
+            }
+        }
         if (gs.player.jumpHolding && gs.player.onGround) {
             gs.player.vel.y = JUMP_VEL;
             gs.player.onGround = false;
+            gs.player.fallStartY = gs.player.pos.y;
         }
         gs.player.vel.y += GRAVITY * sdt;
     }
@@ -1549,6 +1782,15 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     p.y += gs.player.vel.y * sdt;
     if (checkCollision(*gs.world, p)) {
         if (gs.player.vel.y < 0) {
+            // Düşme Hasarı Hesaplama
+            if (gs.player.fallStartY > 0.0f && !gs.player.inWater) {
+                float fallDist = gs.player.fallStartY - p.y;
+                if (fallDist > 3.2f) {
+                    float dmg = (fallDist - 3.2f) * 1.3f;
+                    gs.player.health = std::max(0.0f, gs.player.health - dmg);
+                }
+            }
+            gs.player.fallStartY = 0.0f;
             gs.player.onGround = true;
         }
         p.y = gs.player.pos.y;
@@ -1559,7 +1801,16 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
-    // Kırma İşlemi ve Düşen Eşya
+    // Oyuncu Canı Biterse Yeniden Doğma
+    if (gs.player.health <= 0.0f) {
+        int respawnY = gs.world->getHighestBlock(0, 0);
+        gs.player.pos = {0.5f, static_cast<float>(respawnY) + 1.2f, 0.5f};
+        gs.player.health = 20.0f;
+        gs.player.hunger = 20.0f;
+        gs.player.fallStartY = 0.0f;
+    }
+
+    // Blok Kırma İşlemi ve Düşen 3B Eşya
     if (gs.player.isBreaking) {
         gs.player.handSwingProgress = 1.0f;
         auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, gs.player.lookDir(), REACH);
@@ -1567,7 +1818,8 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
             if (hit.block == gs.player.breakingBlock) {
                 uint8_t targetB = gs.world->blockAt(hit.block.x, hit.block.y, hit.block.z);
                 float hVal = std::max(0.2f, BD(targetB).hardness);
-                gs.player.breakProgress += sdt / (hVal * 0.75f);
+                gs.player.breakProgress += sdt / (hVal * 0.70f);
+                gs.player.breakingFace = hit.face;
 
                 if (gs.player.breakProgress >= 1.0f) {
                     gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
@@ -1581,6 +1833,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
                 }
             } else {
                 gs.player.breakingBlock = hit.block;
+                gs.player.breakingFace = hit.face;
                 gs.player.breakProgress = 0.0f;
             }
         } else {
@@ -1655,6 +1908,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetJumpState(JNIEnv*, jc
     if (holding && gState->player.onGround && !gState->player.inWater) {
         gState->player.vel.y = JUMP_VEL;
         gState->player.onGround = false;
+        gState->player.fallStartY = gState->player.pos.y;
     }
 }
 
@@ -1686,8 +1940,9 @@ JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetPlayerStats(JNIEnv
     if (!gState) return env->NewStringUTF("{}");
     char buf[256];
     snprintf(buf, sizeof(buf),
-             "{\"fps\":%.1f,\"x\":%.1f,\"y\":%.1f,\"z\":%.1f}",
-             gState->fps, gState->player.pos.x, gState->player.pos.y, gState->player.pos.z);
+             "{\"fps\":%.1f,\"x\":%.1f,\"y\":%.1f,\"z\":%.1f,\"hp\":%.1f,\"hunger\":%.1f}",
+             gState->fps, gState->player.pos.x, gState->player.pos.y, gState->player.pos.z,
+             gState->player.health, gState->player.hunger);
     return env->NewStringUTF(buf);
 }
 

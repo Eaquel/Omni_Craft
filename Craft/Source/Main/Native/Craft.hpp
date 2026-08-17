@@ -218,6 +218,9 @@ struct Player {
     Vec3 pos{0.5f, 60.0f, 0.5f}, vel{};
     float yaw = 0.0f, pitch = 0.0f;
     float eyeH = 1.62f;
+    float health = 20.0f;
+    float hunger = 20.0f;
+    float fallStartY = 0.0f;
     float worldTime = 6000.0f;
     float fov = 70.0f;
     int renderDistance = 6;
@@ -229,6 +232,7 @@ struct Player {
 
     bool isBreaking = false;
     Vec3i breakingBlock{-999, -999, -999};
+    Vec3i breakingFace{0, 1, 0};
     float breakProgress = 0.0f;
     float handSwingProgress = 0.0f;
 
@@ -248,6 +252,7 @@ public:
     GLuint atlasTex = 0;
     GLuint crackTex = 0;
     GLuint boxVAO = 0, boxVBO = 0;
+    GLuint unitCubeVAO = 0, unitCubeVBO = 0;
     int screenW = 1920, screenH = 1080;
 
     void init(int w, int h);
@@ -255,11 +260,12 @@ public:
     void frame(World& world, Player& player, float time);
     void generateTextures();
     void drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw = 0, float pitch = 0, float roll = 0);
-    void drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw = 0);
-    void drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress);
+    void drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw = 0, float pitch = 0, float roll = 0);
+    void drawTargetedFaceCrack(const Mat4& vp, Vec3i pos, Vec3i face, float progress);
     void drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, float time);
     void drawMob(const Mat4& vp, const Entity& e, float daylight);
-    void drawFirstPersonHand(const Mat4& proj, const Player& player, float time);
+    void drawFirstPersonHandAndItem(const Mat4& proj, const Player& player, float time);
+    void drawCharacterModel(const Mat4& vp, Vec3 pos, float yaw, float pitch, float animTime, float walkSpeed, uint8_t heldBlockId, float swingProgress);
 };
 
 struct GameState {

@@ -39,12 +39,25 @@ object CraftLogger {
 
     fun init(context: Context) {
         val docsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        logDir = File(docsDir, "Craft_Log").apply { if (!exists()) mkdirs() }
+        logDir = File(docsDir, "Omni_Craft").apply { if (!exists()) mkdirs() }
+        if (logDir == null || !logDir!!.exists()) {
+            logDir = File(context.getExternalFilesDir(null), "Omni_Craft").apply { if (!exists()) mkdirs() }
+        }
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-            Log.e(TAG, "Kritik Hata: $sw")
+            logError("Kritik Hata: $sw")
         }
+    }
+
+    fun logError(msg: String) {
+        Log.e(TAG, msg)
+        try {
+            logDir?.let {
+                val f = File(it, "engine.log")
+                f.appendText("[HATA] $msg\n")
+            }
+        } catch (_: Exception) {}
     }
 
     fun getLogDirPath(): String = logDir?.absolutePath ?: ""
@@ -70,52 +83,52 @@ object BlockIconFactory {
         val sideRCol: Int
 
         when (blockId) {
-            1 -> { // Grass
+            1 -> { // Çimen (Grass)
                 topCol = Color.rgb(85, 185, 50)
                 sideLCol = Color.rgb(100, 70, 45)
                 sideRCol = Color.rgb(125, 85, 55)
             }
-            2 -> { // Dirt
+            2 -> { // Toprak (Dirt)
                 topCol = Color.rgb(125, 85, 55)
                 sideLCol = Color.rgb(95, 65, 40)
                 sideRCol = Color.rgb(135, 95, 60)
             }
-            3 -> { // Stone
+            3 -> { // Taş (Stone)
                 topCol = Color.rgb(155, 155, 158)
                 sideLCol = Color.rgb(120, 120, 122)
                 sideRCol = Color.rgb(175, 175, 178)
             }
-            4 -> { // Cobble
+            4 -> { // Kırıktaş (Cobble)
                 topCol = Color.rgb(130, 130, 130)
                 sideLCol = Color.rgb(100, 100, 100)
                 sideRCol = Color.rgb(145, 145, 145)
             }
-            5 -> { // Sand
+            5 -> { // Kum (Sand)
                 topCol = Color.rgb(235, 222, 160)
                 sideLCol = Color.rgb(200, 188, 130)
                 sideRCol = Color.rgb(248, 238, 178)
             }
-            7, 10 -> { // Logs
+            7, 10, 13 -> { // Meşe / Huş / Çam Kütük (Logs)
                 topCol = Color.rgb(168, 132, 85)
                 sideLCol = Color.rgb(98, 72, 45)
                 sideRCol = Color.rgb(122, 92, 60)
             }
-            9, 11 -> { // Planks
+            9, 11, 14 -> { // Tahta (Planks)
                 topCol = Color.rgb(182, 138, 82)
                 sideLCol = Color.rgb(148, 108, 62)
                 sideRCol = Color.rgb(202, 152, 92)
             }
-            19 -> { // Diamond Ore
+            19 -> { // Elmas Cevheri (Diamond Ore)
                 topCol = Color.rgb(145, 145, 148)
                 sideLCol = Color.rgb(45, 230, 230)
                 sideRCol = Color.rgb(170, 170, 175)
             }
-            32 -> { // Crafting Table
+            32 -> { // Üretim Masası (Crafting Table)
                 topCol = Color.rgb(188, 142, 86)
                 sideLCol = Color.rgb(152, 112, 66)
                 sideRCol = Color.rgb(138, 98, 56)
             }
-            36 -> { // Torch
+            36 -> { // Meşale (Torch)
                 topCol = Color.rgb(255, 225, 55)
                 sideLCol = Color.rgb(135, 92, 50)
                 sideRCol = Color.rgb(165, 118, 65)
@@ -266,7 +279,7 @@ class Activity : AndroidActivity() {
     private lateinit var rootLayout: FrameLayout
     private var glView: GLSurfaceView? = null
 
-    // Multi-Touch Pointer Takip
+    // Bağımsız Multi-Touch Takip Havuzu
     private var joyPointerId = -1
     private var joyOriginX = 0f
     private var joyOriginY = 0f
@@ -288,6 +301,8 @@ class Activity : AndroidActivity() {
     private val mainHandler = Handler(Looper.getMainLooper())
     private var statsUpdater: Runnable? = null
     private var statsTextView: TextView? = null
+    private var healthBar: LinearLayout? = null
+    private var hungerBar: LinearLayout? = null
 
     private val prefs by lazy { getSharedPreferences("omni_settings", Context.MODE_PRIVATE) }
 
@@ -426,7 +441,7 @@ class Activity : AndroidActivity() {
         hud.addView(chV)
         hud.addView(chH)
 
-        // 2. Üst Durum Çubuğu (FPS, Koordinat, Pause Butonu)
+        // 2. Üst Durum Çubuğu (FPS, XYZ, Can & Açlık Barları, Pause Butonu)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -442,6 +457,45 @@ class Activity : AndroidActivity() {
             layoutParams = LinearLayout.LayoutParams(0, -2, 1.0f)
         }
         topBar.addView(statsTextView)
+
+        // Can ve Açlık Barları
+        val statusBars = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(-2, -2).apply { marginEnd = dp(16f) }
+        }
+
+        healthBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(2f))
+        }
+        hungerBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+        }
+
+        for (i in 0 until 10) {
+            val heart = View(this).apply {
+                background = GradientDrawable().apply {
+                    setColor(Color.rgb(235, 45, 45))
+                    cornerRadius = dp(2f).toFloat()
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(10f), dp(10f)).apply { setMargins(dp(1f), 0, dp(1f), 0) }
+            }
+            healthBar?.addView(heart)
+
+            val hungerIcon = View(this).apply {
+                background = GradientDrawable().apply {
+                    setColor(Color.rgb(205, 130, 45))
+                    cornerRadius = dp(2f).toFloat()
+                }
+                layoutParams = LinearLayout.LayoutParams(dp(10f), dp(10f)).apply { setMargins(dp(1f), 0, dp(1f), 0) }
+            }
+            hungerBar?.addView(hungerIcon)
+        }
+
+        statusBars.addView(healthBar)
+        statusBars.addView(hungerBar)
+        topBar.addView(statusBars)
 
         val pauseBtn = Button(this).apply {
             text = "❚❚"
@@ -484,7 +538,7 @@ class Activity : AndroidActivity() {
         hud.addView(joyBaseView)
         hud.addView(joyKnobView)
 
-        // 4. Sağ Aksiyon Butonları (KIR ve ZIPLA) - Çakışmasız ve Kompakt
+        // 4. Sağ Aksiyon Butonları (KIR ve ZIPLA)
         val rightActionArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -533,7 +587,7 @@ class Activity : AndroidActivity() {
         rightActionArea.addView(jumpBtn)
         hud.addView(rightActionArea)
 
-        // 5. MCPE Standart 9'lu Kompakt Hotbar
+        // 5. 9'lu Kompakt Hotbar
         val hotbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -614,7 +668,7 @@ class Activity : AndroidActivity() {
         hotbarContainer.addView(invBtn)
         hud.addView(hotbarContainer)
 
-        // 6. Eşzamanlı Çoklu Dokunmatik (Multi-Touch) & Ekrana Dokunarak Blok Koyma
+        // 6. Eşzamanlı Çoklu Dokunma (Multi-Touch) & Ekrana Dokunarak Blok Koyma
         hud.setOnTouchListener { _, event ->
             val pIdx = event.actionIndex
             val pId = event.getPointerId(pIdx)
@@ -663,7 +717,6 @@ class Activity : AndroidActivity() {
                     if (pId == camPointerId) {
                         val duration = System.currentTimeMillis() - touchDownTime
                         val distMoved = Math.hypot((lastCamX - touchDownX).toDouble(), (lastCamY - touchDownY).toDouble())
-                        // Ekrana kısa dokunulduğunda o noktadaki bloğun üzerine blok koy
                         if (duration < 240 && distMoved < 20.0) {
                             Engine.nativeTapPlaceAt(lastCamX, lastCamY)
                         }
@@ -682,7 +735,7 @@ class Activity : AndroidActivity() {
 
         root.addView(hud)
 
-        // İstatistik Döngüsü
+        // Durum Güncelleme Döngüsü
         statsUpdater = object : Runnable {
             override fun run() {
                 try {
@@ -692,10 +745,31 @@ class Activity : AndroidActivity() {
                         val x = json.optDouble("x", 0.0)
                         val y = json.optDouble("y", 64.0)
                         val z = json.optDouble("z", 0.0)
+                        val hp = json.optDouble("hp", 20.0).toFloat()
+                        val hunger = json.optDouble("hunger", 20.0).toFloat()
+
                         statsTextView?.text = String.format("XYZ: %.1f, %.1f, %.1f  •  %.0f FPS", x, y, z, fps)
+
+                        // Can ve Açlık Görselleri Güncelleme
+                        val fullHearts = (hp / 2.0f).toInt().coerceIn(0, 10)
+                        healthBar?.let { hb ->
+                            for (i in 0 until hb.childCount) {
+                                (hb.getChildAt(i).background as GradientDrawable).setColor(
+                                    if (i < fullHearts) Color.rgb(235, 45, 45) else Color.rgb(60, 20, 20)
+                                )
+                            }
+                        }
+                        val fullHunger = (hunger / 2.0f).toInt().coerceIn(0, 10)
+                        hungerBar?.let { ub ->
+                            for (i in 0 until ub.childCount) {
+                                (ub.getChildAt(i).background as GradientDrawable).setColor(
+                                    if (i < fullHunger) Color.rgb(205, 130, 45) else Color.rgb(60, 40, 20)
+                                )
+                            }
+                        }
                     }
                 } catch (_: Exception) {}
-                mainHandler.postDelayed(this, 300)
+                mainHandler.postDelayed(this, 250)
             }
         }
         mainHandler.post(statsUpdater!!)
