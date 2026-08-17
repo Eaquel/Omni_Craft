@@ -30,10 +30,10 @@ static constexpr int CS        = 16;
 static constexpr int WH        = 128;
 static constexpr int RD        = 5;
 static constexpr int SEA_LEVEL = 32;
-static constexpr float GRAVITY = -26.0f;
+static constexpr float GRAVITY = -24.0f;
 static constexpr float JUMP_VEL= 8.6f;
+static constexpr float SWIM_VEL= 4.2f;
 static constexpr float WALK_SPD= 4.317f;
-static constexpr float SPRINT_SPD= 6.2f;
 static constexpr float REACH   = 5.5f;
 static constexpr int INV_SIZE  = 36;
 static constexpr int HOTBAR_SZ = 9;
@@ -53,8 +53,7 @@ enum BlockID : uint8_t {
 enum ItemID : uint16_t {
     ITEM_NONE=0, ITEM_STICK=256, ITEM_RAW_PORK, ITEM_COOKED_PORK,
     ITEM_RAW_BEEF, ITEM_COOKED_BEEF, ITEM_RAW_MUTTON, ITEM_WOOL,
-    ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND,
-    ITEM_SWORD_IRON, ITEM_PICKAXE_IRON
+    ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND
 };
 
 enum EntityType : uint8_t {
@@ -202,6 +201,7 @@ struct Player {
     float eyeH = 1.62f;
     bool onGround = false;
     bool inWater = false;
+    bool jumpHolding = false;
     Inventory inv;
 
     bool isBreaking = false;
@@ -241,5 +241,6 @@ struct GameState {
     int screenW = 1920, screenH = 1080;
     float inputX = 0, inputZ = 0;
     float time = 0;
+    float autoSaveTimer = 0.0f;
     std::string saveDirectory = "";
 };

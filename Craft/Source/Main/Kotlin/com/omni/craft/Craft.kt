@@ -40,14 +40,13 @@ object CraftLogger {
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-            Log.e(TAG, "Kritik Hata: $sw")
+            Log.e(TAG, "Fatal Crash: $sw")
         }
     }
 
     fun getLogDirPath(): String = logDir?.absolutePath ?: ""
 }
 
-// 3D İzometrik Minecraft Piksel Blok İkon Oluşturucu
 object BlockIconFactory {
     private val iconCache = HashMap<Int, Bitmap>()
 
@@ -191,29 +190,6 @@ object VectorIconFactory {
         return BitmapDrawable(context.resources, bmp)
     }
 
-    fun createPlaceIcon(context: Context, size: Int = 110): Drawable {
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val c = Canvas(bmp)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = size * 0.08f
-            color = Color.WHITE
-            strokeJoin = Paint.Join.ROUND
-        }
-        val h = size / 2f; val q = size / 4f; val e = size * 0.15f
-        c.drawLine(h, e, size - e, q + e * 0.5f, p)
-        c.drawLine(size - e, q + e * 0.5f, size - e, size - q, p)
-        c.drawLine(size - e, size - q, h, size - e * 0.5f, p)
-        c.drawLine(h, size - e * 0.5f, e, size - q, p)
-        c.drawLine(e, size - q, e, q + e * 0.5f, p)
-        c.drawLine(e, q + e * 0.5f, h, e, p)
-        c.drawLine(h, e, h, h + e * 0.5f, p)
-        c.drawLine(h, h + e * 0.5f, size - e, q + e * 0.5f, p)
-        c.drawLine(h, h + e * 0.5f, e, q + e * 0.5f, p)
-        c.drawLine(h, h + e * 0.5f, h, size - e * 0.5f, p)
-        return BitmapDrawable(context.resources, bmp)
-    }
-
     fun createJumpIcon(context: Context, size: Int = 110): Drawable {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -248,8 +224,8 @@ object Engine {
     external fun nativeInput(x: Float, z: Float)
     external fun nativeCameraInput(dx: Float, dy: Float)
     external fun nativeSetBreaking(active: Boolean)
-    external fun nativeTap(type: Int)
-    external fun nativeJump()
+    external fun nativeTapPlace()
+    external fun nativeSetJumpState(holding: Boolean)
     external fun nativeSelectSlot(slot: Int)
     external fun nativeSaveWorld()
     external fun nativeGetInventory(): String
@@ -280,9 +256,9 @@ object Engine {
 }
 
 class Activity : AndroidActivity() {
-    private lateinit var glView: GLSurfaceView
+    private lateinit var rootLayout: FrameLayout
+    private var glView: GLSurfaceView? = null
 
-    // Çoklu Dokunmatik Durum Takipçileri
     private var joyPointerId = -1
     private var joyCenterX = 0f
     private var joyCenterY = 0f
@@ -290,6 +266,10 @@ class Activity : AndroidActivity() {
     private var camPointerId = -1
     private var lastCamX = 0f
     private var lastCamY = 0f
+    private var touchDownTime = 0L
+
+    // Ayarlar Değerleri
+    private var sensitivity = 1.0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -300,20 +280,9 @@ class Activity : AndroidActivity() {
                 display?.supportedModes?.maxByOrNull { it.refreshRate }?.modeId ?: 0
         }
 
-        val root = FrameLayout(this)
-        val saveDir = File(filesDir, "world_data").apply { if (!exists()) mkdirs() }.absolutePath
-
-        glView = GLSurfaceView(this).apply {
-            setEGLContextClientVersion(3)
-            setPreserveEGLContextOnPause(true)
-            setRenderer(Engine.GameRenderer(saveDir))
-            renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
-        }
-        root.addView(glView)
-
-        setupMCPEHUD(root)
-        setContentView(root)
-        root.post { applyFullScreen() }
+        rootLayout = FrameLayout(this)
+        setContentView(rootLayout)
+        showLobby()
     }
 
     private fun applyFullScreen() {
@@ -335,7 +304,71 @@ class Activity : AndroidActivity() {
         }
     }
 
-    private fun setupMCPEHUD(root: FrameLayout) {
+    private fun showLobby() {
+        rootLayout.removeAllViews()
+
+        val lobby = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.rgb(20, 24, 30))
+            layoutParams = FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        val title = TextView(this).apply {
+            text = "MINECRAFT : OMNI"
+            textSize = 32f
+            setTextColor(Color.WHITE)
+            typeface = Typeface.DEFAULT_BOLD
+            setShadowLayer(8f, 2f, 2f, Color.BLACK)
+            setPadding(0, 0, 0, 40)
+        }
+        lobby.addView(title)
+
+        fun createLobbyBtn(text: String, onClick: () -> Unit): Button {
+            return Button(this).apply {
+                setText(text)
+                textSize = 16f
+                setTextColor(Color.WHITE)
+                background = GradientDrawable().apply {
+                    setColor(Color.argb(220, 60, 65, 75))
+                    cornerRadius = 10f
+                    setStroke(2, Color.WHITE)
+                }
+                layoutParams = LinearLayout.LayoutParams(400, 110).apply {
+                    setMargins(0, 10, 0, 10)
+                }
+                setOnClickListener { onClick() }
+            }
+        }
+
+        lobby.addView(createLobbyBtn("DÜNYAYA GİR") { startGame() })
+        lobby.addView(createLobbyBtn("AYARLAR") { showSettingsDialog() })
+        lobby.addView(createLobbyBtn("ÇIKIŞ") { finish() })
+
+        rootLayout.addView(lobby)
+        applyFullScreen()
+    }
+
+    private fun startGame() {
+        rootLayout.removeAllViews()
+
+        val saveDir = File(filesDir, "world_data").apply { if (!exists()) mkdirs() }.absolutePath
+        glView = GLSurfaceView(this).apply {
+            setEGLContextClientVersion(3)
+            setPreserveEGLContextOnPause(true)
+            setRenderer(Engine.GameRenderer(saveDir))
+            renderMode = GLSurfaceView.RENDERMODE_CONTINUOUSLY
+        }
+        rootLayout.addView(glView)
+
+        setupGameHUD(rootLayout)
+        applyFullScreen()
+    }
+
+    private fun setupGameHUD(root: FrameLayout) {
         val hud = FrameLayout(this)
 
         // 1. Crosshair
@@ -350,7 +383,7 @@ class Activity : AndroidActivity() {
         hud.addView(chV)
         hud.addView(chH)
 
-        // 2. Sol Dinamik Joystick Tabanı
+        // 2. Sol Joystick Tabanı
         val joyBase = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -364,7 +397,7 @@ class Activity : AndroidActivity() {
         }
         hud.addView(joyBase)
 
-        // 3. Sağ Eylem Butonları
+        // 3. Sağ Eylem Butonları (KIR ve ZIPLA)
         val rightActionArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -395,18 +428,6 @@ class Activity : AndroidActivity() {
             }
         }
 
-        val placeBtn = ImageButton(this).apply {
-            setImageDrawable(VectorIconFactory.createPlaceIcon(this@Activity))
-            scaleType = ImageView.ScaleType.CENTER_INSIDE
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.argb(160, 45, 150, 55))
-                setStroke(2, Color.WHITE)
-            }
-            layoutParams = LinearLayout.LayoutParams(125, 125).apply { setMargins(8, 8, 8, 8) }
-            setOnClickListener { Engine.nativeTap(1) }
-        }
-
         val jumpBtn = ImageButton(this).apply {
             setImageDrawable(VectorIconFactory.createJumpIcon(this@Activity))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -416,11 +437,16 @@ class Activity : AndroidActivity() {
                 setStroke(2, Color.WHITE)
             }
             layoutParams = LinearLayout.LayoutParams(125, 125).apply { setMargins(8, 8, 8, 8) }
-            setOnClickListener { Engine.nativeJump() }
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { Engine.nativeSetJumpState(true); true }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { Engine.nativeSetJumpState(false); true }
+                    else -> false
+                }
+            }
         }
 
         rightActionArea.addView(breakBtn)
-        rightActionArea.addView(placeBtn)
         rightActionArea.addView(jumpBtn)
         hud.addView(rightActionArea)
 
@@ -528,7 +554,7 @@ class Activity : AndroidActivity() {
         }
         hud.addView(pauseBtn)
 
-        // Eşzamanlı Çoklu Dokunmatik Router (Multi-Touch Event Router)
+        // Çoklu Dokunmatik & Ekrana Tıklayarak Blok Koyma
         hud.setOnTouchListener { _, event ->
             val pointerIndex = event.actionIndex
             val pId = event.getPointerId(pointerIndex)
@@ -546,6 +572,7 @@ class Activity : AndroidActivity() {
                         camPointerId = pId
                         lastCamX = x
                         lastCamY = y
+                        touchDownTime = System.currentTimeMillis()
                     }
                 }
                 MotionEvent.ACTION_MOVE -> {
@@ -557,10 +584,9 @@ class Activity : AndroidActivity() {
                         if (currentId == joyPointerId) {
                             handleJoystick(px, py)
                         } else if (currentId == camPointerId) {
-                            val dx = (px - lastCamX) * 0.22f
-                            val dy = (py - lastCamY) * 0.22f
-                            // Sola kaydırınca sola, yukarı kaydırınca yukarı
-                            Engine.nativeCameraInput(dx, dy)
+                            val dx = (px - lastCamX) * 0.22f * sensitivity
+                            val dy = (py - lastCamY) * 0.22f * sensitivity
+                            Engine.nativeCameraInput(dx, -dy)
                             lastCamX = px
                             lastCamY = py
                         }
@@ -572,6 +598,10 @@ class Activity : AndroidActivity() {
                         Engine.nativeInput(0f, 0f)
                     }
                     if (pId == camPointerId) {
+                        // Kısa dokunuş ile doğrudan blok yerleştirme
+                        if (System.currentTimeMillis() - touchDownTime < 220) {
+                            Engine.nativeTapPlace()
+                        }
                         camPointerId = -1
                     }
                 }
@@ -597,7 +627,6 @@ class Activity : AndroidActivity() {
             dx = (dx / dist) * maxRadius
             dy = (dy / dist) * maxRadius
         }
-        // İleri basınca ileri (-dy), Sağa basınca sağa (+dx)
         Engine.nativeInput(dx / maxRadius, -dy / maxRadius)
     }
 
@@ -690,6 +719,62 @@ class Activity : AndroidActivity() {
         dialog.show()
     }
 
+    private fun showSettingsDialog() {
+        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        val layout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            setBackgroundColor(Color.argb(240, 20, 24, 30))
+        }
+
+        val title = TextView(this).apply {
+            text = "AYARLAR"
+            textSize = 22f
+            setTextColor(Color.WHITE)
+            setPadding(0, 0, 0, 40)
+        }
+        layout.addView(title)
+
+        val sensLabel = TextView(this).apply {
+            text = "Kamera Hassasiyeti: ${(sensitivity * 100).toInt()}%"
+            textSize = 16f
+            setTextColor(Color.WHITE)
+        }
+        layout.addView(sensLabel)
+
+        val seekBar = SeekBar(this).apply {
+            max = 200
+            progress = (sensitivity * 100).toInt()
+            layoutParams = LinearLayout.LayoutParams(500, 80).apply { setMargins(0, 20, 0, 40) }
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(sb: SeekBar?, prog: Int, fromUser: Boolean) {
+                    sensitivity = Math.max(0.2f, prog / 100.0f)
+                    sensLabel.text = "Kamera Hassasiyeti: ${(sensitivity * 100).toInt()}%"
+                }
+                override fun onStartTrackingTouch(sb: SeekBar?) {}
+                override fun onStopTrackingTouch(sb: SeekBar?) {}
+            })
+        }
+        layout.addView(seekBar)
+
+        val closeBtn = Button(this).apply {
+            text = "Geri Dön"
+            textSize = 15f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                cornerRadius = 10f
+                setColor(Color.argb(200, 60, 65, 75))
+                setStroke(2, Color.WHITE)
+            }
+            layoutParams = LinearLayout.LayoutParams(380, 100)
+            setOnClickListener { dialog.dismiss(); applyFullScreen() }
+        }
+        layout.addView(closeBtn)
+
+        dialog.setContentView(layout)
+        dialog.show()
+    }
+
     private fun showPauseMenu() {
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         val layout = LinearLayout(this).apply {
@@ -721,18 +806,17 @@ class Activity : AndroidActivity() {
             }
         }
 
-        layout.addView(createMenuBtn(getString(R.string.menu_resume)) {
+        layout.addView(createMenuBtn("Oyuna Dön") {
             dialog.dismiss()
             applyFullScreen()
         })
-        layout.addView(createMenuBtn(getString(R.string.menu_save)) {
-            Engine.nativeSaveWorld()
-            Toast.makeText(this, getString(R.string.save_success), Toast.LENGTH_SHORT).show()
+        layout.addView(createMenuBtn("Ayarlar") {
+            showSettingsDialog()
         })
-        layout.addView(createMenuBtn(getString(R.string.menu_exit)) {
+        layout.addView(createMenuBtn("Ana Menüye Çık") {
             Engine.nativeSaveWorld()
             dialog.dismiss()
-            finish()
+            showLobby()
         })
 
         dialog.setContentView(layout)
@@ -746,13 +830,13 @@ class Activity : AndroidActivity() {
 
     override fun onResume() {
         super.onResume()
-        glView.onResume()
+        glView?.onResume()
         applyFullScreen()
     }
 
     override fun onPause() {
         super.onPause()
-        glView.onPause()
+        glView?.onPause()
         Engine.nativeSaveWorld()
     }
 

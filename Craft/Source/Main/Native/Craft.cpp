@@ -26,11 +26,10 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
         write(fd, buf, strlen(buf));
         close(fd);
     }
-    LOGE("Yerel motor çökmesi kaydedildi: %s", filePath);
+    LOGE("Yerel motor cokmesi: %s", filePath);
     _exit(1);
 }
 
-// Android Little-Endian formatı için RGBA renk dönüştürücü
 static inline uint32_t makeRGBA(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255) {
     return (static_cast<uint32_t>(a) << 24) |
            (static_cast<uint32_t>(b) << 16) |
@@ -364,9 +363,9 @@ void World::generateChunk(Chunk& c) {
     if ((c.cx + c.cz) % 4 == 0) {
         int h = flr(getTerrainHeight(bx + 8.0f, bz + 8.0f));
         if (h > SEA_LEVEL) {
-            spawnMob(ENT_PIG, {(float)bx + 8, (float)h + 1.2f, (float)bz + 8});
-            spawnMob(ENT_COW, {(float)bx + 4, (float)h + 1.2f, (float)bz + 4});
-            spawnMob(ENT_SHEEP, {(float)bx + 12, (float)h + 1.2f, (float)bz + 12});
+            spawnMob(ENT_PIG, {(float)bx + 8, (float)h + 0.1f, (float)bz + 8});
+            spawnMob(ENT_COW, {(float)bx + 4, (float)h + 0.1f, (float)bz + 4});
+            spawnMob(ENT_SHEEP, {(float)bx + 12, (float)h + 0.1f, (float)bz + 12});
         }
     }
 
@@ -482,7 +481,6 @@ void World::updateEntities(float dt) {
                 e.pos.y = flr(e.pos.y) + 0.15f;
             }
         } else {
-            // Canavarlar/Hayvanlar için yerçekimi ve zemin kontrolü
             e.vel.y += GRAVITY * dt;
             Vec3 nextPos = e.pos;
             nextPos.y += e.vel.y * dt;
@@ -610,13 +608,13 @@ void Renderer::generateProceduralAtlas() {
                     case 5: // Planks
                         c = makeRGBA(170 + (y%4==0?-25:noise), 130 + noise, 75 + noise);
                         break;
-                    case 6: // Oak Log Side (Kahverengi Ağaç Kabuğu)
+                    case 6: // Oak Log Side
                         c = makeRGBA(105 + (x%4==0?-20:noise), 75 + noise, 45 + noise);
                         break;
-                    case 7: // Oak Log Top (Halka Desenli Açık Ahşap)
+                    case 7: // Oak Log Top
                         c = makeRGBA(160 + noise, 125 + noise, 80 + noise);
                         break;
-                    case 8: // Oak Leaves (Kafessiz Zengin Yaprak)
+                    case 8: // Oak Leaves
                         if ((x%3==0 && y%3==0) && ((x+y)%4==0)) {
                             c = makeRGBA(0, 0, 0, 0);
                         } else {
@@ -642,10 +640,10 @@ void Renderer::generateProceduralAtlas() {
                     case 13: // Sand
                         c = makeRGBA(225 + noise, 215 + noise, 155 + noise);
                         break;
-                    case 14: // Canlı Okyanus Suyu (Saydam Mavi)
+                    case 14: // Canli Su
                         c = makeRGBA(27 + noise, 110 + noise, 232 + noise, 190);
                         break;
-                    case 15: // Kırma Çatlağı Maskesi
+                    case 15: // Kirilma Catlak Maskesi
                         if ((x == y || x == (15 - y) || (x % 3 == 0 && y > 3)) && ((x + y) % 2 == 0)) {
                             c = makeRGBA(20, 20, 20, 210);
                         } else {
@@ -835,7 +833,6 @@ void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
     glDisable(GL_CULL_FACE);
     glUseProgram(skyProg);
     
-    // Güneş
     Vec3 sunPos = playerPos + Vec3{80.0f, 120.0f, -80.0f};
     Mat4 model;
     model.m[0] = 24.0f; model.m[5] = 24.0f; model.m[10] = 24.0f;
@@ -847,7 +844,6 @@ void Renderer::drawSunAndClouds(const Mat4& vp, Vec3 playerPos, float time) {
     glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    // Sadece gökyüzü tavanında süzülen 3D bulutlar (Y=95)
     float cloudShift = fmodf(time * 1.5f, 64.0f);
     int cx = flr(playerPos.x / 32.0f);
     int cz = flr(playerPos.z / 32.0f);
@@ -1026,7 +1022,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->player.inv.slots[8] = ItemStack(TNT, 64);
 
     gState->initialized = true;
-    LOGI("Minecraft Motoru Başlatıldı. Doğuş: [0, %d, 0]", spawnY);
+    LOGI("Minecraft Motoru Baslatildi. Spawn: [0, %d, 0]", spawnY);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeResize(JNIEnv*, jclass, jint w, jint h) {
@@ -1042,6 +1038,13 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     GameState& gs = *gState;
     float sdt = clampf(dt, 0.0f, 0.033f);
     gs.time += sdt;
+    gs.autoSaveTimer += sdt;
+
+    // Otomatik Kayıt (Her 60 saniyede bir)
+    if (gs.autoSaveTimer >= 60.0f) {
+        if (gs.world) gs.world->saveWorld(gs.saveDirectory);
+        gs.autoSaveTimer = 0.0f;
+    }
 
     uint8_t bFeet = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y), flr(gs.player.pos.z));
     uint8_t bHead = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y + 1.2f), flr(gs.player.pos.z));
@@ -1050,7 +1053,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     float yawRad = gs.player.yaw * (3.14159265f / 180.0f);
     float spd = gs.player.inWater ? WALK_SPD * 0.6f : WALK_SPD;
 
-    // Tam Minecraft yön vektörleri
     float fwd = gs.inputZ * spd;
     float str = gs.inputX * spd;
 
@@ -1063,9 +1065,14 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.vel.x = moveDir.x;
     gs.player.vel.z = moveDir.z;
 
+    // Su / Yerçekimi Hareketi
     if (gs.player.inWater) {
-        gs.player.vel.y += GRAVITY * sdt * 0.2f;
-        gs.player.vel.y *= 0.85f;
+        if (gs.player.jumpHolding) {
+            gs.player.vel.y = SWIM_VEL; // Suda basılı tutarak yukarı yüzme
+        } else {
+            gs.player.vel.y += GRAVITY * sdt * 0.2f;
+            gs.player.vel.y *= 0.85f;
+        }
     } else {
         gs.player.vel.y += GRAVITY * sdt;
     }
@@ -1096,6 +1103,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
+    // Blok Kırma İşlemi
     if (gs.player.isBreaking) {
         auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, gs.player.lookDir(), REACH);
         if (hit.hit) {
@@ -1164,10 +1172,10 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetBreaking(JNIEnv*, jcl
     }
 }
 
-JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jint type) {
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlace(JNIEnv*, jclass) {
     if (!gState) return;
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, 1.62f, 0}, gState->player.lookDir(), REACH);
-    if (type == 1 && hit.hit) {
+    if (hit.hit) {
         ItemStack& held = gState->player.inv.active();
         if (!held.empty() && held.id < BLOCK_COUNT) {
             Vec3i target = {hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z};
@@ -1181,11 +1189,10 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jin
     }
 }
 
-JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeJump(JNIEnv*, jclass) {
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetJumpState(JNIEnv*, jclass, jboolean holding) {
     if (!gState) return;
-    if (gState->player.inWater) {
-        gState->player.vel.y = 4.5f;
-    } else if (gState->player.onGround) {
+    gState->player.jumpHolding = holding;
+    if (holding && gState->player.onGround && !gState->player.inWater) {
         gState->player.vel.y = JUMP_VEL;
         gState->player.onGround = false;
     }
