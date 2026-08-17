@@ -15,6 +15,8 @@ import android.os.Bundle
 import android.os.Environment
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationEffect
+import android.os.Vibrator
 import android.util.Log
 import android.view.*
 import android.widget.*
@@ -63,6 +65,7 @@ object CraftLogger {
     fun getLogDirPath(): String = logDir?.absolutePath ?: ""
 }
 
+// 10. Özellik: Canlı Eşya ve Et Görselleri Fabrikası (Icon Factory)
 object BlockIconFactory {
     private val iconCache = HashMap<Int, Bitmap>()
 
@@ -78,119 +81,81 @@ object BlockIconFactory {
         val quarter = size / 4f
         val eighth = size / 8f
 
+        // 2D Eşya İkonları Çizimi
+        if (blockId >= 256) {
+            when (blockId) {
+                258 -> { // Çiğ Domuz Eti (Raw Pork)
+                    p.color = Color.rgb(225, 115, 115)
+                    c.drawRoundRect(RectF(size * 0.2f, size * 0.25f, size * 0.8f, size * 0.75f), 12f, 12f, p)
+                    p.color = Color.rgb(255, 210, 210)
+                    c.drawCircle(size * 0.4f, size * 0.5f, size * 0.12f, p)
+                }
+                260 -> { // Çiğ Sığır Eti (Raw Beef)
+                    p.color = Color.rgb(180, 45, 45)
+                    c.drawRoundRect(RectF(size * 0.15f, size * 0.2f, size * 0.85f, size * 0.8f), 14f, 14f, p)
+                    p.color = Color.WHITE
+                    c.drawRect(RectF(size * 0.45f, size * 0.4f, size * 0.65f, size * 0.6f), p)
+                }
+                262 -> { // Çiğ Koyun Eti (Raw Mutton)
+                    p.color = Color.rgb(205, 75, 75)
+                    c.drawRoundRect(RectF(size * 0.2f, size * 0.25f, size * 0.8f, size * 0.75f), 10f, 10f, p)
+                }
+                263 -> { // Yün (Wool)
+                    p.color = Color.rgb(240, 240, 240)
+                    c.drawCircle(half, half, size * 0.35f, p)
+                }
+                268 -> { // Elma (Apple)
+                    p.color = Color.rgb(225, 30, 30)
+                    c.drawCircle(half, half + 4f, size * 0.32f, p)
+                    p.color = Color.rgb(85, 165, 40)
+                    c.drawRect(RectF(half - 2f, size * 0.15f, half + 4f, size * 0.3f), p)
+                }
+                else -> {
+                    p.color = Color.rgb(180, 180, 180)
+                    c.drawRoundRect(RectF(size * 0.2f, size * 0.3f, size * 0.8f, size * 0.7f), 8f, 8f, p)
+                }
+            }
+            iconCache[blockId] = bmp
+            return BitmapDrawable(context.resources, bmp)
+        }
+
+        // 3D Blok İzometrik Çizimi
         val topCol: Int
         val sideLCol: Int
         val sideRCol: Int
 
         when (blockId) {
-            1 -> { // Grass
-                topCol = Color.rgb(85, 185, 50)
-                sideLCol = Color.rgb(100, 70, 45)
-                sideRCol = Color.rgb(125, 85, 55)
-            }
-            2 -> { // Dirt
-                topCol = Color.rgb(125, 85, 55)
-                sideLCol = Color.rgb(95, 65, 40)
-                sideRCol = Color.rgb(135, 95, 60)
-            }
-            3 -> { // Stone
-                topCol = Color.rgb(155, 155, 158)
-                sideLCol = Color.rgb(120, 120, 122)
-                sideRCol = Color.rgb(175, 175, 178)
-            }
-            4 -> { // Cobble
-                topCol = Color.rgb(130, 130, 130)
-                sideLCol = Color.rgb(100, 100, 100)
-                sideRCol = Color.rgb(145, 145, 145)
-            }
-            5 -> { // Sand
-                topCol = Color.rgb(235, 222, 160)
-                sideLCol = Color.rgb(200, 188, 130)
-                sideRCol = Color.rgb(248, 238, 178)
-            }
-            7, 10, 13 -> { // Logs
-                topCol = Color.rgb(168, 132, 85)
-                sideLCol = Color.rgb(98, 72, 45)
-                sideRCol = Color.rgb(122, 92, 60)
-            }
-            9, 11, 14 -> { // Planks
-                topCol = Color.rgb(182, 138, 82)
-                sideLCol = Color.rgb(148, 108, 62)
-                sideRCol = Color.rgb(202, 152, 92)
-            }
-            19 -> { // Diamond Ore
-                topCol = Color.rgb(145, 145, 148)
-                sideLCol = Color.rgb(45, 230, 230)
-                sideRCol = Color.rgb(170, 170, 175)
-            }
-            32 -> { // Crafting Table
-                topCol = Color.rgb(188, 142, 86)
-                sideLCol = Color.rgb(152, 112, 66)
-                sideRCol = Color.rgb(138, 98, 56)
-            }
-            36 -> { // Torch
-                topCol = Color.rgb(255, 225, 55)
-                sideLCol = Color.rgb(135, 92, 50)
-                sideRCol = Color.rgb(165, 118, 65)
-            }
-            44 -> { // TNT
-                topCol = Color.rgb(225, 50, 50)
-                sideLCol = Color.rgb(180, 40, 40)
-                sideRCol = Color.WHITE
-            }
-            258, 260, 262 -> { // Etler (Meat Drops)
-                topCol = Color.rgb(185, 55, 55)
-                sideLCol = Color.rgb(150, 35, 35)
-                sideRCol = Color.rgb(220, 80, 80)
-            }
-            263 -> { // Yün (Wool)
-                topCol = Color.rgb(230, 230, 230)
-                sideLCol = Color.rgb(190, 190, 190)
-                sideRCol = Color.WHITE
-            }
-            else -> {
-                topCol = Color.rgb(150, 150, 150)
-                sideLCol = Color.rgb(115, 115, 115)
-                sideRCol = Color.rgb(175, 175, 175)
-            }
+            1 -> { topCol = Color.rgb(85, 185, 50); sideLCol = Color.rgb(100, 70, 45); sideRCol = Color.rgb(125, 85, 55) }
+            2 -> { topCol = Color.rgb(125, 85, 55); sideLCol = Color.rgb(95, 65, 40); sideRCol = Color.rgb(135, 95, 60) }
+            3 -> { topCol = Color.rgb(155, 155, 158); sideLCol = Color.rgb(120, 120, 122); sideRCol = Color.rgb(175, 175, 178) }
+            4 -> { topCol = Color.rgb(130, 130, 130); sideLCol = Color.rgb(100, 100, 100); sideRCol = Color.rgb(145, 145, 145) }
+            5 -> { topCol = Color.rgb(235, 222, 160); sideLCol = Color.rgb(200, 188, 130); sideRCol = Color.rgb(248, 238, 178) }
+            7, 10, 13 -> { topCol = Color.rgb(168, 132, 85); sideLCol = Color.rgb(98, 72, 45); sideRCol = Color.rgb(122, 92, 60) }
+            9, 11, 14 -> { topCol = Color.rgb(182, 138, 82); sideLCol = Color.rgb(148, 108, 62); sideRCol = Color.rgb(202, 152, 92) }
+            19 -> { topCol = Color.rgb(145, 145, 148); sideLCol = Color.rgb(45, 230, 230); sideRCol = Color.rgb(170, 170, 175) }
+            32 -> { topCol = Color.rgb(188, 142, 86); sideLCol = Color.rgb(152, 112, 66); sideRCol = Color.rgb(138, 98, 56) }
+            36 -> { topCol = Color.rgb(255, 225, 55); sideLCol = Color.rgb(135, 92, 50); sideRCol = Color.rgb(165, 118, 65) }
+            44 -> { topCol = Color.rgb(225, 50, 50); sideLCol = Color.rgb(180, 40, 40); sideRCol = Color.WHITE }
+            else -> { topCol = Color.rgb(150, 150, 150); sideLCol = Color.rgb(115, 115, 115); sideRCol = Color.rgb(175, 175, 175) }
         }
 
         val topPath = Path().apply {
-            moveTo(half, eighth)
-            lineTo(size - eighth, quarter + eighth)
-            lineTo(half, half + eighth)
-            lineTo(eighth, quarter + eighth)
-            close()
+            moveTo(half, eighth); lineTo(size - eighth, quarter + eighth); lineTo(half, half + eighth); lineTo(eighth, quarter + eighth); close()
         }
-        p.color = topCol
-        c.drawPath(topPath, p)
+        p.color = topCol; c.drawPath(topPath, p)
 
         val leftPath = Path().apply {
-            moveTo(eighth, quarter + eighth)
-            lineTo(half, half + eighth)
-            lineTo(half, size - eighth)
-            lineTo(eighth, size - quarter)
-            close()
+            moveTo(eighth, quarter + eighth); lineTo(half, half + eighth); lineTo(half, size - eighth); lineTo(eighth, size - quarter); close()
         }
-        p.color = sideLCol
-        c.drawPath(leftPath, p)
+        p.color = sideLCol; c.drawPath(leftPath, p)
 
         val rightPath = Path().apply {
-            moveTo(half, half + eighth)
-            lineTo(size - eighth, quarter + eighth)
-            lineTo(size - eighth, size - quarter)
-            lineTo(half, size - eighth)
-            close()
+            moveTo(half, half + eighth); lineTo(size - eighth, quarter + eighth); lineTo(size - eighth, size - quarter); lineTo(half, size - eighth); close()
         }
-        p.color = sideRCol
-        c.drawPath(rightPath, p)
+        p.color = sideRCol; c.drawPath(rightPath, p)
 
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = 1.5f
-        p.color = Color.argb(120, 0, 0, 0)
-        c.drawPath(topPath, p)
-        c.drawPath(leftPath, p)
-        c.drawPath(rightPath, p)
+        p.style = Paint.Style.STROKE; p.strokeWidth = 1.5f; p.color = Color.argb(120, 0, 0, 0)
+        c.drawPath(topPath, p); c.drawPath(leftPath, p); c.drawPath(rightPath, p)
 
         iconCache[blockId] = bmp
         return BitmapDrawable(context.resources, bmp)
@@ -198,55 +163,60 @@ object BlockIconFactory {
 }
 
 object MinecraftIconFactory {
-    fun createHeart(context: Context, state: Int, size: Int = 30): Drawable { // 0: Empty, 1: Half, 2: Full
+    fun createHeart(context: Context, state: Int, size: Int = 30): Drawable {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        // Arka Plan Çerçeve
-        p.color = Color.rgb(35, 10, 10)
-        p.style = Paint.Style.FILL
+        p.color = Color.rgb(35, 10, 10); p.style = Paint.Style.FILL
         c.drawRoundRect(RectF(1f, 1f, size - 1f, size - 1f), 3f, 3f, p)
 
         if (state == 2) {
-            p.color = Color.rgb(235, 30, 30)
-            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
-            p.color = Color.rgb(255, 140, 140)
-            c.drawRect(RectF(4f, 4f, size * 0.45f, size * 0.45f), p)
+            p.color = Color.rgb(235, 30, 30); c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+            p.color = Color.rgb(255, 140, 140); c.drawRect(RectF(4f, 4f, size * 0.45f, size * 0.45f), p)
         } else if (state == 1) {
-            p.color = Color.rgb(235, 30, 30)
-            c.drawRect(RectF(3f, 3f, size * 0.5f, size - 3f), p)
-            p.color = Color.rgb(75, 45, 45)
-            c.drawRect(RectF(size * 0.5f, 3f, size - 3f, size - 3f), p)
+            p.color = Color.rgb(235, 30, 30); c.drawRect(RectF(3f, 3f, size * 0.5f, size - 3f), p)
+            p.color = Color.rgb(75, 45, 45); c.drawRect(RectF(size * 0.5f, 3f, size - 3f, size - 3f), p)
         } else {
-            p.color = Color.rgb(75, 45, 45)
-            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+            p.color = Color.rgb(75, 45, 45); c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
         }
         return BitmapDrawable(context.resources, bmp)
     }
 
-    fun createHunger(context: Context, state: Int, size: Int = 30): Drawable { // 0: Empty, 1: Half, 2: Full
+    fun createHunger(context: Context, state: Int, size: Int = 30): Drawable {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val p = Paint(Paint.ANTI_ALIAS_FLAG)
 
-        p.color = Color.rgb(40, 20, 10)
-        p.style = Paint.Style.FILL
+        p.color = Color.rgb(40, 20, 10); p.style = Paint.Style.FILL
         c.drawRoundRect(RectF(1f, 1f, size - 1f, size - 1f), 3f, 3f, p)
 
         if (state == 2) {
-            p.color = Color.rgb(195, 105, 35)
-            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
-            p.color = Color.rgb(245, 185, 95)
-            c.drawRect(RectF(4f, 4f, size * 0.45f, size * 0.45f), p)
+            p.color = Color.rgb(195, 105, 35); c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+            p.color = Color.rgb(245, 185, 95); c.drawRect(RectF(4f, 4f, size * 0.45f, size * 0.45f), p)
         } else if (state == 1) {
-            p.color = Color.rgb(195, 105, 35)
-            c.drawRect(RectF(size * 0.5f, 3f, size - 3f, size - 3f), p)
-            p.color = Color.rgb(65, 45, 30)
-            c.drawRect(RectF(3f, 3f, size * 0.5f, size - 3f), p)
+            p.color = Color.rgb(195, 105, 35); c.drawRect(RectF(size * 0.5f, 3f, size - 3f, size - 3f), p)
+            p.color = Color.rgb(65, 45, 30); c.drawRect(RectF(3f, 3f, size * 0.5f, size - 3f), p)
         } else {
-            p.color = Color.rgb(65, 45, 30)
-            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+            p.color = Color.rgb(65, 45, 30); c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+        }
+        return BitmapDrawable(context.resources, bmp)
+    }
+
+    // 6. Özellik: 10 Baloncuklu Oksijen Göstergesi (Bubble Bar)
+    fun createBubble(context: Context, full: Boolean, size: Int = 30): Drawable {
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        if (full) {
+            p.color = Color.rgb(35, 140, 235); p.style = Paint.Style.FILL
+            c.drawCircle(size / 2f, size / 2f, size * 0.40f, p)
+            p.color = Color.WHITE
+            c.drawCircle(size * 0.38f, size * 0.38f, size * 0.12f, p)
+        } else {
+            p.color = Color.argb(100, 30, 80, 140); p.style = Paint.Style.STROKE; p.strokeWidth = 2f
+            c.drawCircle(size / 2f, size / 2f, size * 0.35f, p)
         }
         return BitmapDrawable(context.resources, bmp)
     }
@@ -257,17 +227,11 @@ object VectorIconFactory {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeCap = Paint.Cap.ROUND
+            style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; color = Color.rgb(215, 160, 95); strokeWidth = size * 0.10f
         }
-        p.color = Color.rgb(215, 160, 95)
-        p.strokeWidth = size * 0.10f
         c.drawLine(size * 0.25f, size * 0.75f, size * 0.70f, size * 0.30f, p)
-
-        p.color = Color.WHITE
-        p.strokeWidth = size * 0.12f
-        val arcRect = RectF(size * 0.40f, size * 0.12f, size * 0.88f, size * 0.60f)
-        c.drawArc(arcRect, 180f, 120f, false, p)
+        p.color = Color.WHITE; p.strokeWidth = size * 0.12f
+        c.drawArc(RectF(size * 0.40f, size * 0.12f, size * 0.88f, size * 0.60f), 180f, 120f, false, p)
         return BitmapDrawable(context.resources, bmp)
     }
 
@@ -275,16 +239,10 @@ object VectorIconFactory {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.STROKE
-            strokeWidth = size * 0.12f
-            color = Color.WHITE
-            strokeCap = Paint.Cap.ROUND
-            strokeJoin = Paint.Join.ROUND
+            style = Paint.Style.STROKE; strokeWidth = size * 0.12f; color = Color.WHITE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
         }
         val path = Path().apply {
-            moveTo(size * 0.25f, size * 0.55f)
-            lineTo(size * 0.50f, size * 0.28f)
-            lineTo(size * 0.75f, size * 0.55f)
+            moveTo(size * 0.25f, size * 0.55f); lineTo(size * 0.50f, size * 0.28f); lineTo(size * 0.75f, size * 0.55f)
         }
         c.drawPath(path, p)
         c.drawLine(size * 0.50f, size * 0.30f, size * 0.50f, size * 0.75f, p)
@@ -306,6 +264,7 @@ object Engine {
     external fun nativeCameraInput(dx: Float, dy: Float)
     external fun nativeSetBreaking(active: Boolean)
     external fun nativeTapPlaceAt(screenX: Float, screenY: Float)
+    external fun nativeDropHeldItem()
     external fun nativeSetJumpState(holding: Boolean)
     external fun nativeSelectSlot(slot: Int)
     external fun nativeSaveWorld()
@@ -341,7 +300,6 @@ class Activity : AndroidActivity() {
     private lateinit var rootLayout: FrameLayout
     private var glView: GLSurfaceView? = null
 
-    // Birleşik Multi-Touch Pointer Takip Sistemi
     private var joyPointerId = -1
     private var joyOriginX = 0f
     private var joyOriginY = 0f
@@ -368,11 +326,25 @@ class Activity : AndroidActivity() {
     private var statsTextView: TextView? = null
     private var healthBar: LinearLayout? = null
     private var hungerBar: LinearLayout? = null
+    private var oxygenBar: LinearLayout? = null
     private var hotbarSlotsLayout: LinearLayout? = null
 
+    private val vibrator by lazy { getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator }
     private val prefs by lazy { getSharedPreferences("omni_settings", Context.MODE_PRIVATE) }
 
     private fun dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
+
+    // 9. Özellik: Titreşim Geri Bildirimi (Haptic Feedback)
+    private fun triggerHaptic(durationMs: Long = 30) {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator?.vibrate(VibrationEffect.createOneShot(durationMs, VibrationEffect.DEFAULT_AMPLITUDE))
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator?.vibrate(durationMs)
+            }
+        } catch (_: Exception) {}
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -507,7 +479,7 @@ class Activity : AndroidActivity() {
         hud.addView(chV)
         hud.addView(chH)
 
-        // 2. Üst Durum Çubuğu (XYZ/FPS, 10 Kalp, 10 Açlık, Pause Butonu)
+        // 2. Üst Durum Çubuğu (XYZ/FPS, 10 Kalp, 10 Açlık, 10 Oksijen, Pause Butonu)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -536,6 +508,10 @@ class Activity : AndroidActivity() {
         }
         hungerBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            setPadding(0, 0, 0, dp(2f))
+        }
+        oxygenBar = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
         }
 
         for (i in 0 until 10) {
@@ -550,10 +526,17 @@ class Activity : AndroidActivity() {
                 layoutParams = LinearLayout.LayoutParams(dp(12f), dp(12f)).apply { setMargins(dp(0.5f), 0, dp(0.5f), 0) }
             }
             hungerBar?.addView(hunger)
+
+            val bubble = ImageView(this).apply {
+                setImageDrawable(MinecraftIconFactory.createBubble(this@Activity, true, dp(11f)))
+                layoutParams = LinearLayout.LayoutParams(dp(11f), dp(11f)).apply { setMargins(dp(0.5f), 0, dp(0.5f), 0) }
+            }
+            oxygenBar?.addView(bubble)
         }
 
         statusBars.addView(healthBar)
         statusBars.addView(hungerBar)
+        statusBars.addView(oxygenBar)
         topBar.addView(statusBars)
 
         val pauseBtn = Button(this).apply {
@@ -597,7 +580,7 @@ class Activity : AndroidActivity() {
         hud.addView(joyBaseView)
         hud.addView(joyKnobView)
 
-        // 4. Sağ Aksiyon Görselleri (KIR ve ZIPLA)
+        // 4. Sağ Aksiyon Görselleri (KIR, ZIPLA, AT)
         val breakVisual = ImageView(this).apply {
             setImageDrawable(VectorIconFactory.createBreakIcon(this@Activity, dp(54f)))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -624,8 +607,23 @@ class Activity : AndroidActivity() {
                 setMargins(0, 0, dp(24f), dp(20f))
             }
         }
+        val dropBtnVisual = Button(this).apply {
+            text = "AT"
+            textSize = 10f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(Color.argb(160, 60, 70, 85))
+                setStroke(dp(1f), Color.WHITE)
+            }
+            layoutParams = FrameLayout.LayoutParams(dp(42f), dp(42f)).apply {
+                gravity = Gravity.BOTTOM or Gravity.END
+                setMargins(0, 0, dp(86f), dp(94f))
+            }
+        }
         hud.addView(breakVisual)
         hud.addView(jumpVisual)
+        hud.addView(dropBtnVisual)
 
         // 5. 9'lu Hotbar
         val hotbarContainer = LinearLayout(this).apply {
@@ -692,13 +690,14 @@ class Activity : AndroidActivity() {
         hotbarContainer.addView(invBtn)
         hud.addView(hotbarContainer)
 
-        // 6. MASTER BİRLEŞİK ÇOKLU DOKUNMATİK DİSPATCHER (MEGA ÇÖZÜM)
+        // 6. MASTER BİRLEŞİK ÇOKLU DOKUNMATİK KATMANI
         hud.setOnTouchListener { _, event ->
             val w = rootLayout.width.toFloat()
             val h = rootLayout.height.toFloat()
 
             val breakRect = RectF(w - dp(90f), h - dp(150f), w, h - dp(75f))
             val jumpRect = RectF(w - dp(90f), h - dp(75f), w, h)
+            val dropRect = RectF(w - dp(135f), h - dp(145f), w - dp(80f), h - dp(85f))
             val hotbarRect = RectF(w * 0.30f, h - dp(56f), w * 0.70f, h)
 
             val pIdx = event.actionIndex
@@ -708,9 +707,13 @@ class Activity : AndroidActivity() {
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (breakRect.contains(px, py) && breakPointerId == -1) {
+                    if (dropRect.contains(px, py)) {
+                        Engine.nativeDropHeldItem()
+                        triggerHaptic(40)
+                    } else if (breakRect.contains(px, py) && breakPointerId == -1) {
                         breakPointerId = pId
                         Engine.nativeSetBreaking(true)
+                        triggerHaptic(25)
                     } else if (jumpRect.contains(px, py) && jumpPointerId == -1) {
                         jumpPointerId = pId
                         Engine.nativeSetJumpState(true)
@@ -719,6 +722,7 @@ class Activity : AndroidActivity() {
                         val sel = ((px - hotbarRect.left) / slotW).toInt().coerceIn(0, 8)
                         Engine.nativeSelectSlot(sel)
                         updateHotbarVisuals(sel)
+                        triggerHaptic(20)
                     } else if (px < w * 0.40f && joyPointerId == -1) {
                         joyPointerId = pId
                         joyOriginX = joyBaseView?.let { it.x + it.width / 2f } ?: px
@@ -767,8 +771,9 @@ class Activity : AndroidActivity() {
                     if (pId == camPointerId) {
                         val duration = System.currentTimeMillis() - touchDownTime
                         val distMoved = Math.hypot((lastCamX - touchDownX).toDouble(), (lastCamY - touchDownY).toDouble())
-                        if (duration < 240 && distMoved < 20.0 && !breakRect.contains(lastCamX, lastCamY) && !jumpRect.contains(lastCamX, lastCamY)) {
+                        if (duration < 240 && distMoved < 20.0 && !breakRect.contains(lastCamX, lastCamY) && !jumpRect.contains(lastCamX, lastCamY) && !dropRect.contains(lastCamX, lastCamY)) {
                             Engine.nativeTapPlaceAt(lastCamX, lastCamY)
+                            triggerHaptic(30)
                         }
                         camPointerId = -1
                     }
@@ -785,7 +790,6 @@ class Activity : AndroidActivity() {
 
         root.addView(hud)
 
-        // Durum & Hotbar Otomatik Güncelleme
         statsUpdater = object : Runnable {
             override fun run() {
                 try {
@@ -797,10 +801,10 @@ class Activity : AndroidActivity() {
                         val z = json.optDouble("z", 0.0)
                         val hp = json.optDouble("hp", 20.0).toFloat()
                         val hunger = json.optDouble("hunger", 20.0).toFloat()
+                        val oxygen = json.optDouble("oxygen", 20.0).toFloat()
 
                         statsTextView?.text = String.format("XYZ: %.1f, %.1f, %.1f  •  %.0f FPS", x, y, z, fps)
 
-                        // 10'lu Minecraft Kalp Güncellemesi
                         healthBar?.let { hb ->
                             for (i in 0 until 10) {
                                 val heartHp = (hp - i * 2.0f).coerceIn(0.0f, 2.0f)
@@ -809,7 +813,6 @@ class Activity : AndroidActivity() {
                             }
                         }
 
-                        // 10'lu Minecraft Açlık Güncellemesi
                         hungerBar?.let { ub ->
                             for (i in 0 until 10) {
                                 val hungerHp = (hunger - i * 2.0f).coerceIn(0.0f, 2.0f)
@@ -818,7 +821,19 @@ class Activity : AndroidActivity() {
                             }
                         }
 
-                        // Hotbar Slotlarının Canlı Senkronizasyonu (Blok Sayısı Eksilmesi)
+                        // Oksijen Göstergesi
+                        oxygenBar?.let { ob ->
+                            if (oxygen < 20.0f) {
+                                ob.visibility = View.VISIBLE
+                                for (i in 0 until 10) {
+                                    val bubbleFull = (oxygen > i * 2.0f)
+                                    (ob.getChildAt(i) as ImageView).setImageDrawable(MinecraftIconFactory.createBubble(this@Activity, bubbleFull, dp(11f)))
+                                }
+                            } else {
+                                ob.visibility = View.GONE
+                            }
+                        }
+
                         refreshHotbarFromNative()
                     }
                 } catch (_: Exception) {}

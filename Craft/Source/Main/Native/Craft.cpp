@@ -31,7 +31,7 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     if (fd >= 0) {
         char buf[512];
         snprintf(buf, sizeof(buf),
-                 "=== OMNI CRAFT CRASH REPORT ===\nSignal: %d, Fault Addr: %p\nTime: %04d-%02d-%02d %02d:%02d:%02d\n",
+                 "=== OMNI CRAFT CRASH ===\nSignal: %d, Fault Addr: %p\nTime: %04d-%02d-%02d %02d:%02d:%02d\n",
                  sig, info->si_addr, ti->tm_year + 1900, ti->tm_mon + 1, ti->tm_mday, ti->tm_hour, ti->tm_min, ti->tm_sec);
         write(fd, buf, strlen(buf));
         close(fd);
@@ -56,7 +56,7 @@ static constexpr BlockDef BLOCK_TABLE[BLOCK_COUNT] = {
     {"kum",         true,  false, false, 0.5f, 13, 13, 13, SAND},
     {"cakil",       true,  false, false, 0.6f, 4,  4,  4,  GRAVEL},
     {"mese_kutuk",  true,  false, false, 2.0f, 7,  6,  7,  OAK_LOG},
-    {"mese_yaprak", true,  true,  false, 0.2f, 8,  8,  8,  AIR},
+    {"mese_yaprak", true,  true,  false, 0.2f, 8,  8,  8,  ITEM_APPLE},
     {"mese_tahta",  true,  false, false, 2.0f, 5,  5,  5,  OAK_PLANKS},
     {"ny_kutuk",    true,  false, false, 2.0f, 7,  6,  7,  BIRCH_LOG},
     {"ny_tahta",    true,  false, false, 2.0f, 5,  5,  5,  BIRCH_PLANKS},
@@ -315,7 +315,7 @@ void Chunk::buildMesh(const World& world) {
                 if (!BD(bBack).solid) {
                     float ao0 = calcAO(isSolid(x+1, y, z-1), isSolid(x, y-1, z-1), isSolid(x+1, y-1, z-1));
                     float ao1 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y-1, z-1), isSolid(x-1, y-1, z-1));
-                    float ao2 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y-1, z-1), isSolid(x-1, y+1, z-1));
+                    float ao2 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y+1, z-1), isSolid(x-1, y+1, z-1));
                     float ao3 = calcAO(isSolid(x+1, y, z-1), isSolid(x, y+1, z-1), isSolid(x+1, y+1, z-1));
                     addQuad(opaqueVerts, BD(id).sideTile, 0.85f, ao0, ao1, ao2, ao3,
                             wx+1, wy+0, wz+0, wx+0, wy+0, wz+0,
@@ -511,6 +511,19 @@ void World::setBlock(int wx, int wy, int wz, uint8_t b) {
     }
 }
 
+// 1. Özellik: Kum ve Çakıl Yerçekimi (Falling Block Physics)
+void World::applyFallingBlockPhysics(int wx, int wy, int wz) {
+    uint8_t b = blockAt(wx, wy, wz);
+    if (b == SAND || b == GRAVEL) {
+        int curY = wy;
+        while (curY > 1 && (blockAt(wx, curY - 1, wz) == AIR || blockAt(wx, curY - 1, wz) == WATER)) {
+            setBlock(wx, curY, wz, AIR);
+            setBlock(wx, curY - 1, wz, b);
+            curY--;
+        }
+    }
+}
+
 void World::spawnMob(EntityType type, Vec3 pos) {
     std::lock_guard lk(entityMtx);
     Entity e;
@@ -568,6 +581,38 @@ void World::spawnSplashParticles(Vec3 pos) {
     }
 }
 
+// 7. Özellik: Kritik Vuruş Yıldız Parçacıkları (Critical Hit Sparks)
+void World::spawnCritParticles(Vec3 pos) {
+    std::lock_guard lk(particleMtx);
+    for (int i = 0; i < 10; ++i) {
+        Particle p;
+        p.pos = pos + Vec3{((rand()%100)/100.f - 0.5f)*0.4f, ((rand()%100)/100.f - 0.5f)*0.4f, ((rand()%100)/100.f - 0.5f)*0.4f};
+        p.vel = Vec3{((rand()%100)/100.f - 0.5f)*4.0f, ((rand()%100)/100.f)*3.5f + 1.0f, ((rand()%100)/100.f - 0.5f)*4.0f};
+        p.color = {1.0f, 0.85f, 0.20f};
+        p.life = 0.0f;
+        p.maxLife = 0.40f;
+        p.size = 0.08f;
+        particles.push_back(p);
+    }
+}
+
+// 4. Özellik: Yemek Yeme Parçacıkları (Eating Crumbs)
+void World::spawnEatParticles(Vec3 pos, uint16_t itemId) {
+    std::lock_guard lk(particleMtx);
+    Vec3 col{0.8f, 0.3f, 0.3f};
+    if (itemId == ITEM_APPLE) col = {0.9f, 0.15f, 0.15f};
+    for (int i = 0; i < 6; ++i) {
+        Particle p;
+        p.pos = pos + Vec3{((rand()%100)/100.f - 0.5f)*0.25f, ((rand()%100)/100.f - 0.5f)*0.25f, ((rand()%100)/100.f - 0.5f)*0.25f};
+        p.vel = Vec3{((rand()%100)/100.f - 0.5f)*1.5f, ((rand()%100)/100.f)*1.5f + 0.5f, ((rand()%100)/100.f - 0.5f)*1.5f};
+        p.color = col;
+        p.life = 0.0f;
+        p.maxLife = 0.35f;
+        p.size = 0.06f;
+        particles.push_back(p);
+    }
+}
+
 void World::updateParticles(float dt) {
     std::lock_guard lk(particleMtx);
     for (size_t i = 0; i < particles.size();) {
@@ -614,18 +659,23 @@ void World::updateEntities(float dt, const Vec3& playerPos) {
         e.animTime += dt;
         if (e.hurtTimer > 0.0f) e.hurtTimer -= dt;
 
+        // 3. Özellik: Suda Eşya Kaldırma Kuvveti (Buoyancy)
         if (e.type == ENT_ITEM_DROP) {
-            e.pos += e.vel * dt;
-            e.vel.y += GRAVITY * dt * 0.45f;
             uint8_t bCurrent = blockAt(flr(e.pos.x), flr(e.pos.y), flr(e.pos.z));
             if (bCurrent == WATER) {
-                e.vel.y = 0.9f;
-                e.vel.x *= 0.85f;
-                e.vel.z *= 0.85f;
-            } else if (blockAt(flr(e.pos.x), flr(e.pos.y - 0.1f), flr(e.pos.z)) != AIR) {
-                e.vel = {0, 0, 0};
-                e.pos.y = flr(e.pos.y) + 0.15f;
+                // Suda yukarı doğru yüzme
+                e.vel.y += 6.5f * dt;
+                e.vel.y = clampf(e.vel.y, -0.5f, 1.6f);
+                e.vel.x *= 0.82f;
+                e.vel.z *= 0.82f;
+            } else {
+                e.vel.y += GRAVITY * dt * 0.45f;
+                if (blockAt(flr(e.pos.x), flr(e.pos.y - 0.1f), flr(e.pos.z)) != AIR) {
+                    e.vel = {0, 0, 0};
+                    e.pos.y = flr(e.pos.y) + 0.15f;
+                }
             }
+            e.pos += e.vel * dt;
         } else {
             e.vel.y += GRAVITY * dt;
             e.pos.x += e.vel.x * dt;
@@ -643,25 +693,50 @@ void World::updateEntities(float dt, const Vec3& playerPos) {
                 e.pos.y = nextPos.y;
             }
 
-            Vec3 diff = playerPos - e.pos;
-            float dist = diff.len();
-            if (dist < 9.0f) {
-                float targetYaw = atan2f(diff.x, -diff.z) * 57.29578f;
-                float diffYaw = fmodf(targetYaw - e.headYaw + 540.0f, 360.0f) - 180.0f;
-                e.headYaw += diffYaw * dt * 4.0f;
+            // 2. Özellik: Mob Panik ve Kaçış AI (Flee on Hurt)
+            if (e.panicTimer > 0.0f) {
+                e.panicTimer -= dt;
+                e.walkSpeed = 2.4f;
+                Vec3 away = e.pos - playerPos;
+                away.y = 0;
+                if (away.len() > 0.1f) {
+                    float panicYaw = atan2f(away.x, -away.z) * 57.29578f;
+                    e.yaw = panicYaw;
+                    e.headYaw = panicYaw;
+                }
             } else {
-                e.headYaw = e.yaw;
-                if (fmodf(e.animTime, 4.0f) < dt) {
-                    e.yaw = static_cast<float>(rand() % 360);
+                Vec3 diff = playerPos - e.pos;
+                float dist = diff.len();
+
+                // DÜZELTME: Kafa Açısı Kısıtlaması (Uzaylı gibi 360 dönme engeli)
+                if (dist < 8.0f) {
+                    float targetYaw = atan2f(diff.x, -diff.z) * 57.29578f;
+                    float diffAngle = fmodf(targetYaw - e.yaw + 540.0f, 360.0f) - 180.0f;
+
+                    // Gövdeyi yumuşakça oyuncuya çevir
+                    if (fabsf(diffAngle) > 55.0f) {
+                        float turnDir = diffAngle > 0 ? (diffAngle - 55.0f) : (diffAngle + 55.0f);
+                        e.yaw += turnDir * dt * 3.5f;
+                    }
+
+                    // Kafayı gövdeye göre maksimum +-55 derece sınırla
+                    float headDiff = fmodf(targetYaw - e.yaw + 540.0f, 360.0f) - 180.0f;
+                    headDiff = clampf(headDiff, -55.0f, 55.0f);
+                    e.headYaw = e.yaw + headDiff;
+                } else {
+                    e.headYaw = e.yaw;
+                    if (fmodf(e.animTime, 4.0f) < dt) {
+                        e.yaw = static_cast<float>(rand() % 360);
+                    }
                 }
             }
 
             float rad = e.yaw * 0.01745329f;
-            Vec3 stepMove = {sinf(rad) * 0.9f * dt, 0, -cosf(rad) * 0.9f * dt};
+            Vec3 stepMove = {sinf(rad) * (e.panicTimer > 0.0f ? 2.2f : 0.9f) * dt, 0, -cosf(rad) * (e.panicTimer > 0.0f ? 2.2f : 0.9f) * dt};
             Vec3 testP = e.pos + stepMove;
             if (!checkCollision(*this, testP)) {
                 e.pos = testP;
-                e.walkSpeed = 1.0f;
+                e.walkSpeed = (e.panicTimer > 0.0f ? 2.2f : 1.0f);
             } else {
                 e.walkSpeed = 0.0f;
             }
@@ -721,12 +796,12 @@ Entity* World::hitEntity(Vec3 origin, Vec3 dir, float maxD) {
 }
 
 static constexpr uint32_t SAVE_MAGIC = 0x4F4D4E41u;
-static constexpr uint32_t SAVE_VERSION = 4;
+static constexpr uint32_t SAVE_VERSION = 5;
 static constexpr uint32_t SAVE_FOOTER  = 0x504C5952u;
 
 struct PlayerFooter {
     uint32_t magic;
-    float x, y, z, yaw, pitch, health, hunger, worldTime;
+    float x, y, z, yaw, pitch, health, hunger, oxygen, worldTime;
     int32_t selected;
     uint8_t slots[INV_SIZE][3];
 };
@@ -784,7 +859,7 @@ static void savePlayerFooter(const GameState& gs){
     p.magic = SAVE_FOOTER;
     p.x = gs.player.pos.x; p.y = gs.player.pos.y; p.z = gs.player.pos.z;
     p.yaw = gs.player.yaw; p.pitch = gs.player.pitch;
-    p.health = gs.player.health; p.hunger = gs.player.hunger;
+    p.health = gs.player.health; p.hunger = gs.player.hunger; p.oxygen = gs.player.oxygen;
     p.worldTime = gs.player.worldTime;
     p.selected = gs.player.inv.selected;
     for(int i = 0; i < INV_SIZE; ++i){
@@ -809,6 +884,7 @@ static bool loadPlayerFooter(GameState& gs){
     gs.player.yaw = p.yaw; gs.player.pitch = p.pitch;
     gs.player.health = p.health > 0.0f ? p.health : 20.0f;
     gs.player.hunger = p.hunger > 0.0f ? p.hunger : 20.0f;
+    gs.player.oxygen = p.oxygen > 0.0f ? p.oxygen : 20.0f;
     gs.player.worldTime = fmodf(p.worldTime, 24000.0f);
     gs.player.inv.selected = std::clamp(p.selected, 0, HOTBAR_SZ - 1);
     for(int i = 0; i < INV_SIZE; ++i){
@@ -1165,6 +1241,22 @@ void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float y
     glBindVertexArray(0);
 }
 
+// 9. Özellik: Minecraft 3B Düz Eşya Levha Çizimi (Flat Sprite Plate)
+void Renderer::drawFlatItem(const Mat4& vp, Vec3 pos, uint16_t itemId, float yaw, float pitch) {
+    Vec3 itemColor{0.8f, 0.3f, 0.3f};
+    if (itemId == ITEM_RAW_BEEF) itemColor = {0.68f, 0.18f, 0.18f};
+    else if (itemId == ITEM_RAW_MUTTON) itemColor = {0.85f, 0.40f, 0.40f};
+    else if (itemId == ITEM_WOOL) itemColor = {0.95f, 0.95f, 0.95f};
+    else if (itemId == ITEM_APPLE) itemColor = {0.95f, 0.12f, 0.12f};
+    else if (itemId == ITEM_COAL) itemColor = {0.20f, 0.20f, 0.20f};
+    else if (itemId == ITEM_IRON_INGOT) itemColor = {0.88f, 0.88f, 0.90f};
+    else if (itemId == ITEM_GOLD_INGOT) itemColor = {0.98f, 0.85f, 0.25f};
+    else if (itemId == ITEM_DIAMOND) itemColor = {0.25f, 0.92f, 0.92f};
+    else if (itemId == ITEM_STICK) itemColor = {0.55f, 0.35f, 0.15f};
+
+    drawBox(vp, pos, {0.28f, 0.28f, 0.05f}, itemColor, yaw, pitch);
+}
+
 void Renderer::drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw, float pitch, float roll) {
     if (blockId == AIR || blockId >= BLOCK_COUNT) return;
     const BlockDef& def = BD(blockId);
@@ -1248,22 +1340,22 @@ void Renderer::drawTargetedFaceCrack(const Mat4& vp, Vec3i pos, Vec3i face, floa
     struct QuadV { float x, y, z, u, v; };
     QuadV q[6];
 
-    if (face.y == 1) { // Top
+    if (face.y == 1) {
         q[0] = {fx+0, fy+1+off, fz+0, 0, 1}; q[1] = {fx+0, fy+1+off, fz+1, 1, 1}; q[2] = {fx+1, fy+1+off, fz+1, 1, 0};
         q[3] = {fx+0, fy+1+off, fz+0, 0, 1}; q[4] = {fx+1, fy+1+off, fz+1, 1, 0}; q[5] = {fx+1, fy+1+off, fz+0, 0, 0};
-    } else if (face.y == -1) { // Bottom
+    } else if (face.y == -1) {
         q[0] = {fx+0, fy-off, fz+1, 0, 1}; q[1] = {fx+0, fy-off, fz+0, 1, 1}; q[2] = {fx+1, fy-off, fz+0, 1, 0};
         q[3] = {fx+0, fy-off, fz+1, 0, 1}; q[4] = {fx+1, fy-off, fz+0, 1, 0}; q[5] = {fx+1, fy-off, fz+1, 0, 0};
-    } else if (face.z == 1) { // Front
+    } else if (face.z == 1) {
         q[0] = {fx+0, fy+0, fz+1+off, 0, 1}; q[1] = {fx+1, fy+0, fz+1+off, 1, 1}; q[2] = {fx+1, fy+1, fz+1+off, 1, 0};
         q[3] = {fx+0, fy+0, fz+1+off, 0, 1}; q[4] = {fx+1, fy+1, fz+1+off, 1, 0}; q[5] = {fx+0, fy+1, fz+1+off, 0, 0};
-    } else if (face.z == -1) { // Back
+    } else if (face.z == -1) {
         q[0] = {fx+1, fy+0, fz-off, 0, 1}; q[1] = {fx+0, fy+0, fz-off, 1, 1}; q[2] = {fx+0, fy+1, fz-off, 1, 0};
         q[3] = {fx+1, fy+0, fz-off, 0, 1}; q[4] = {fx+0, fy+1, fz-off, 1, 0}; q[5] = {fx+1, fy+1, fz-off, 0, 0};
-    } else if (face.x == 1) { // Right
+    } else if (face.x == 1) {
         q[0] = {fx+1+off, fy+0, fz+1, 0, 1}; q[1] = {fx+1+off, fy+0, fz+0, 1, 1}; q[2] = {fx+1+off, fy+1, fz+0, 1, 0};
         q[3] = {fx+1+off, fy+0, fz+1, 0, 1}; q[4] = {fx+1+off, fy+1, fz+0, 1, 0}; q[5] = {fx+1+off, fy+1, fz+1, 0, 0};
-    } else { // Left
+    } else {
         q[0] = {fx-off, fy+0, fz+0, 0, 1}; q[1] = {fx-off, fy+0, fz+1, 1, 1}; q[2] = {fx-off, fy+1, fz+1, 1, 0};
         q[3] = {fx-off, fy+0, fz+0, 0, 1}; q[4] = {fx-off, fy+1, fz+1, 1, 0}; q[5] = {fx-off, fy+1, fz+0, 0, 0};
     }
@@ -1427,8 +1519,11 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
         drawBox(vp, e.pos + Vec3{0.28f, 0.3f, 0.38f},   {0.24f, 0.6f, 0.24f}, wool, e.yaw, legAngle);
     } else if (e.type == ENT_ITEM_DROP) {
         float bob = sinf(e.animTime * 3.8f) * 0.12f;
-        uint8_t dropBlock = (e.itemId < BLOCK_COUNT && e.itemId > 0) ? static_cast<uint8_t>(e.itemId) : OAK_PLANKS;
-        drawTexturedCube(vp, e.pos + Vec3{0, 0.25f + bob, 0}, {0.32f, 0.32f, 0.32f}, dropBlock, e.animTime * 95.0f, 15.0f, 0.0f);
+        if (e.itemId < BLOCK_COUNT && e.itemId > 0) {
+            drawTexturedCube(vp, e.pos + Vec3{0, 0.25f + bob, 0}, {0.32f, 0.32f, 0.32f}, (uint8_t)e.itemId, e.animTime * 95.0f, 15.0f, 0.0f);
+        } else {
+            drawFlatItem(vp, e.pos + Vec3{0, 0.25f + bob, 0}, e.itemId, e.animTime * 110.0f, 25.0f);
+        }
     }
     glUniform1f(glGetUniformLocation(entityProg, "uHurt"), 0.0f);
     glEnable(GL_CULL_FACE);
@@ -1437,13 +1532,14 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
 void Renderer::drawFirstPersonHandAndItem(const Mat4& proj, const Player& player, float time) {
     glDisable(GL_DEPTH_TEST);
     float swing = sinf(player.handSwingProgress * 3.1415926f);
+    float eatBob = player.isEating ? sinf(time * 18.0f) * 0.04f : 0.0f;
     float bobX = cosf(time * 6.0f) * 0.015f * (player.vel.len() > 0.1f ? 1.0f : 0.2f);
     float bobY = fabsf(sinf(time * 6.0f)) * 0.015f * (player.vel.len() > 0.1f ? 1.0f : 0.2f);
 
     Mat4 handModel = Mat4::identity();
     handModel.m[0] = 0.20f; handModel.m[5] = 0.45f; handModel.m[10] = 0.20f;
     handModel.m[12] = 0.42f + bobX - swing * 0.08f;
-    handModel.m[13] = -0.38f - bobY - swing * 0.20f;
+    handModel.m[13] = -0.38f - bobY - swing * 0.20f + eatBob;
     handModel.m[14] = -0.65f - swing * 0.15f;
 
     glUseProgram(entityProg);
@@ -1457,9 +1553,13 @@ void Renderer::drawFirstPersonHandAndItem(const Mat4& proj, const Player& player
     glBindVertexArray(0);
 
     const ItemStack& held = player.inv.slots[player.inv.selected % HOTBAR_SZ];
-    if (!held.empty() && held.id > AIR && held.id < BLOCK_COUNT) {
-        Vec3 blockPos = {0.32f + bobX - swing * 0.08f, -0.22f - bobY - swing * 0.20f, -0.55f - swing * 0.15f};
-        drawTexturedCube(proj, blockPos, {0.26f, 0.26f, 0.26f}, (uint8_t)held.id, 45.0f + swing * 25.0f, -20.0f, 0.0f);
+    if (!held.empty() && held.id > AIR) {
+        Vec3 blockPos = {0.32f + bobX - swing * 0.08f, -0.22f - bobY - swing * 0.20f + eatBob, -0.55f - swing * 0.15f};
+        if (held.id < BLOCK_COUNT) {
+            drawTexturedCube(proj, blockPos, {0.26f, 0.26f, 0.26f}, (uint8_t)held.id, 45.0f + swing * 25.0f, -20.0f, 0.0f);
+        } else {
+            drawFlatItem(proj, blockPos, held.id, 45.0f + swing * 25.0f, -20.0f);
+        }
     }
     glEnable(GL_DEPTH_TEST);
 }
@@ -1477,8 +1577,8 @@ void Renderer::frame(World& world, Player& player, float time) {
     Vec3 curSky = skyColorNight + (skyColorDay - skyColorNight) * daylight;
     Vec3 curHorizon = horizonColorNight + (horizonColorDay - horizonColorNight) * daylight;
 
-    if (player.inWater) {
-        glClearColor(0.05f * daylight, 0.24f * daylight, 0.52f * daylight, 1.0f);
+    if (player.headSubmerged) {
+        glClearColor(0.04f * daylight, 0.18f * daylight, 0.44f * daylight, 1.0f);
     } else {
         glClearColor(curHorizon.x, curHorizon.y, curHorizon.z, 1.0f);
     }
@@ -1497,8 +1597,8 @@ void Renderer::frame(World& world, Player& player, float time) {
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, vp.m);
     glUniform1f(glGetUniformLocation(worldProg, "uDaylight"), daylight);
     glUniform3f(glGetUniformLocation(worldProg, "uFogColor"), curHorizon.x, curHorizon.y, curHorizon.z);
-    glUniform1f(glGetUniformLocation(worldProg, "uFogStart"), (player.renderDistance - 2) * 16.0f);
-    glUniform1f(glGetUniformLocation(worldProg, "uFogEnd"), player.renderDistance * 16.0f);
+    glUniform1f(glGetUniformLocation(worldProg, "uFogStart"), player.headSubmerged ? 8.0f : (player.renderDistance - 2) * 16.0f);
+    glUniform1f(glGetUniformLocation(worldProg, "uFogEnd"), player.headSubmerged ? 22.0f : player.renderDistance * 16.0f);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, atlasTex);
     glUniform1i(glGetUniformLocation(worldProg, "uTexture"), 0);
@@ -1542,7 +1642,7 @@ void Renderer::frame(World& world, Player& player, float time) {
         drawTargetedFaceCrack(vp, player.breakingBlock, player.breakingFace, player.breakProgress);
     }
 
-    // 4. Moblar ve Düşen Bloklar
+    // 4. Moblar ve Düşen Bloklar / Eşyalar
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
         if (e.alive) drawMob(vp, e, daylight);
@@ -1610,7 +1710,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->renderer.init(w, h);
     gState->world->loadWorld(gState->saveDirectory);
 
-    // Mavi Ekran Çözümü: Tüm chunk GPU bufferlarını yeni OpenGL contextine zorla bağla
     {
         std::unique_lock lk(gState->world->chunkMtx);
         for (auto& [k, ch] : gState->world->chunks) {
@@ -1621,7 +1720,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
         }
     }
 
-    // Varsayılan Boş Envanter
     for (int i = 0; i < INV_SIZE; ++i) gState->player.inv.slots[i] = ItemStack();
 
     bool loaded = loadPlayerFooter(*gState);
@@ -1662,6 +1760,26 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.attackCooldown -= sdt;
     }
 
+    // 4. Özellik: Yemek Yeme Mekaniği (Eating Update)
+    if (gs.player.isEating) {
+        gs.player.eatTimer += sdt;
+        if (fmodf(gs.player.eatTimer, 0.15f) < sdt) {
+            ItemStack& held = gs.player.inv.active();
+            gs.world->spawnEatParticles(gs.player.pos + Vec3{0, 1.2f, 0} + gs.player.lookDir() * 0.4f, held.id);
+        }
+        if (gs.player.eatTimer >= 1.4f) {
+            ItemStack& held = gs.player.inv.active();
+            if (!held.empty() && (held.id == ITEM_RAW_PORK || held.id == ITEM_RAW_BEEF || held.id == ITEM_RAW_MUTTON || held.id == ITEM_APPLE)) {
+                float hungerGain = (held.id == ITEM_APPLE) ? 4.0f : 6.0f;
+                gs.player.hunger = std::min(20.0f, gs.player.hunger + hungerGain);
+                held.count--;
+                if (held.count == 0) held = ItemStack();
+            }
+            gs.player.isEating = false;
+            gs.player.eatTimer = 0.0f;
+        }
+    }
+
     if (gs.player.dayNightEnabled) {
         gs.player.worldTime = fmodf(gs.player.worldTime + sdt * 20.0f, 24000.0f);
     }
@@ -1675,6 +1793,17 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     uint8_t bHead = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y + 1.2f), flr(gs.player.pos.z));
     bool wasInWater = gs.player.inWater;
     gs.player.inWater = (bFeet == WATER || bHead == WATER);
+    gs.player.headSubmerged = (bHead == WATER);
+
+    // 6. Özellik: Boğulma ve Oksijen Fiziği (Drowning & Oxygen)
+    if (gs.player.headSubmerged) {
+        gs.player.oxygen = std::max(0.0f, gs.player.oxygen - sdt * 2.5f);
+        if (gs.player.oxygen <= 0.0f) {
+            gs.player.health = std::max(0.0f, gs.player.health - sdt * 2.0f);
+        }
+    } else {
+        gs.player.oxygen = std::min(20.0f, gs.player.oxygen + sdt * 12.0f);
+    }
 
     if (!wasInWater && gs.player.inWater) {
         gs.world->spawnSplashParticles(gs.player.pos);
@@ -1706,7 +1835,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.health = std::max(0.0f, gs.player.health - sdt * 0.60f);
     }
 
-    // Yürürken Kesintisiz Zıplama & Coyote Time
+    // Suda ve Karada Kesintisiz Zıplama & Batma Fiziği
     if (gs.player.onGround) gs.player.coyoteTimer = 0.14f;
     else gs.player.coyoteTimer = std::max(0.0f, gs.player.coyoteTimer - sdt);
 
@@ -1715,7 +1844,8 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         if (gs.player.jumpHolding) {
             gs.player.vel.y = SWIM_VEL;
         } else {
-            gs.player.vel.y += GRAVITY * sdt * 0.25f;
+            // Suda aşağı doğru doğal süzülme/batma
+            gs.player.vel.y += GRAVITY * sdt * 0.20f;
             gs.player.vel.y *= 0.88f;
         }
     } else {
@@ -1772,21 +1902,28 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.pos = {0.5f, static_cast<float>(respawnY) + 1.2f, 0.5f};
         gs.player.health = 20.0f;
         gs.player.hunger = 20.0f;
+        gs.player.oxygen = 20.0f;
         gs.player.fallStartY = 0.0f;
     }
 
-    // Yürürken Kesintisiz Blok Kırma ve Canlılara Saldırı
+    // Blok Kırma ve Canlılara Saldırı
     if (gs.player.isBreaking) {
         gs.player.handSwingProgress = 1.0f;
         Vec3 look = gs.player.lookDir();
 
-        // 1. Canlı Kontrolü (Mob Vurma)
         Entity* targetMob = gs.world->hitEntity(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, look, 3.8f);
         if (targetMob && gs.player.attackCooldown <= 0.0f) {
-            targetMob->health -= 4.0f;
+            // 7. Özellik: Kritik Vuruş (Düşerken vurunca ekstra hasar)
+            bool isCrit = !gs.player.onGround && gs.player.vel.y < -0.5f && !gs.player.inWater;
+            float damage = isCrit ? 6.5f : 4.0f;
+
+            targetMob->health -= damage;
             targetMob->hurtTimer = 0.35f;
-            targetMob->vel += look * 4.5f + Vec3{0, 2.5f, 0};
-            gs.player.attackCooldown = 0.38f;
+            targetMob->panicTimer = 3.5f;
+            targetMob->vel += look * 5.0f + Vec3{0, 2.8f, 0};
+            gs.player.attackCooldown = 0.35f;
+
+            if (isCrit) gs.world->spawnCritParticles(targetMob->pos + Vec3{0, 0.8f, 0});
 
             if (targetMob->health <= 0.0f) {
                 targetMob->alive = false;
@@ -1798,7 +1935,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
                 }
             }
         } else if (!targetMob) {
-            // 2. Blok Kırma
             auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, look, REACH);
             if (hit.hit) {
                 if (hit.block == gs.player.breakingBlock) {
@@ -1810,6 +1946,25 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
                     if (gs.player.breakProgress >= 1.0f) {
                         gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
                         gs.world->spawnBreakParticles({hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, targetB);
+                        
+                        // 1. Özellik: Yerçekimi tetikle
+                        gs.world->applyFallingBlockPhysics(hit.block.x, hit.block.y + 1, hit.block.z);
+
+                        // 8. Özellik: Yaprak Çürümesi (Leaf Decay)
+                        if (targetB == OAK_LOG || targetB == BIRCH_LOG || targetB == SPRUCE_LOG) {
+                            for (int lx = hit.block.x - 2; lx <= hit.block.x + 2; ++lx) {
+                                for (int ly = hit.block.y + 1; ly <= hit.block.y + 4; ++ly) {
+                                    for (int lz = hit.block.z - 2; lz <= hit.block.z + 2; ++lz) {
+                                        if (gs.world->blockAt(lx, ly, lz) == OAK_LEAVES && (rand() % 3 == 0)) {
+                                            gs.world->setBlock(lx, ly, lz, AIR);
+                                            gs.world->spawnBreakParticles({lx + 0.5f, ly + 0.5f, lz + 0.5f}, OAK_LEAVES);
+                                            if (rand() % 5 == 0) gs.world->spawnItemDrop(ITEM_APPLE, {lx + 0.5f, (float)ly, lz + 0.5f}, {0, 1.5f, 0});
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
                         uint16_t drop = BD(targetB).dropId;
                         if (drop != AIR) {
                             gs.world->spawnItemDrop(drop, {hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, {0, 2.5f, 0});
@@ -1872,11 +2027,19 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetBreaking(JNIEnv*, jcl
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jclass, jfloat screenX, jfloat screenY) {
     if (!gState) return;
+    ItemStack& held = gState->player.inv.active();
+    
+    // Yemek Yeme Kontrolü (Food item)
+    if (!held.empty() && (held.id == ITEM_RAW_PORK || held.id == ITEM_RAW_BEEF || held.id == ITEM_RAW_MUTTON || held.id == ITEM_APPLE)) {
+        gState->player.isEating = true;
+        gState->player.eatTimer = 0.0f;
+        return;
+    }
+
     gState->player.handSwingProgress = 1.0f;
     Vec3 rayDir = getRayDirection(gState->player, screenX, screenY, gState->screenW, gState->screenH);
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, gState->player.eyeH, 0}, rayDir, REACH);
     if (hit.hit) {
-        ItemStack& held = gState->player.inv.active();
         if (!held.empty() && held.id < BLOCK_COUNT && held.count > 0) {
             Vec3i target = {hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z};
             Vec3 bCenter = {(float)target.x + 0.5f, (float)target.y + 0.5f, (float)target.z + 0.5f};
@@ -1886,6 +2049,18 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jcla
                 if (held.count == 0) held = ItemStack();
             }
         }
+    }
+}
+
+// 5. Özellik: Eşya Fırlatma (Throw Item Drop)
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeDropHeldItem(JNIEnv*, jclass) {
+    if (!gState) return;
+    ItemStack& held = gState->player.inv.active();
+    if (!held.empty() && held.count > 0) {
+        Vec3 throwVel = gState->player.lookDir() * 5.5f + Vec3{0, 1.8f, 0};
+        gState->world->spawnItemDrop(held.id, gState->player.pos + Vec3{0, 1.3f, 0}, throwVel);
+        held.count--;
+        if (held.count == 0) held = ItemStack();
     }
 }
 
@@ -1941,9 +2116,9 @@ JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetPlayerStats(JNIEnv
     if (!gState) return env->NewStringUTF("{}");
     char buf[256];
     snprintf(buf, sizeof(buf),
-             "{\"fps\":%.1f,\"x\":%.1f,\"y\":%.1f,\"z\":%.1f,\"hp\":%.1f,\"hunger\":%.1f}",
+             "{\"fps\":%.1f,\"x\":%.1f,\"y\":%.1f,\"z\":%.1f,\"hp\":%.1f,\"hunger\":%.1f,\"oxygen\":%.1f}",
              gState->fps, gState->player.pos.x, gState->player.pos.y, gState->player.pos.z,
-             gState->player.health, gState->player.hunger);
+             gState->player.health, gState->player.hunger, gState->player.oxygen);
     return env->NewStringUTF(buf);
 }
 
