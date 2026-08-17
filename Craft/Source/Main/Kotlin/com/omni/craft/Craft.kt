@@ -5,7 +5,9 @@ import android.app.Application
 import android.app.Dialog
 import android.content.Context
 import android.content.pm.ActivityInfo
-import android.graphics.Color
+import android.graphics.*
+import android.graphics.drawable.BitmapDrawable
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.opengl.GLSurfaceView
 import android.os.Build
@@ -15,11 +17,9 @@ import android.util.Log
 import android.view.*
 import android.widget.*
 import java.io.File
-import java.io.FileWriter
-import java.io.PrintWriter
 import java.io.StringWriter
+import java.io.PrintWriter
 import java.text.SimpleDateFormat
-import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
 import javax.microedition.khronos.egl.EGLConfig
@@ -35,14 +35,12 @@ class CraftApp : Application() {
 
 object CraftLogger {
     private const val TAG = "OmniCraft"
-    private val logExecutor = Executors.newSingleThreadExecutor()
     private var logDir: File? = null
-    private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
 
     fun init(context: Context) {
         val docsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
         logDir = File(docsDir, "Craft_Log").apply { if (!exists()) mkdirs() }
-        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+        Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
             Log.e(TAG, "Fatal Crash: $sw")
@@ -50,6 +48,208 @@ object CraftLogger {
     }
 
     fun getLogDirPath(): String = logDir?.absolutePath ?: ""
+}
+
+// 1. Kodla Saf Piksel Art Minecraft Blok Önizleme Üreteci
+object BlockIconFactory {
+    private val iconCache = HashMap<Int, Bitmap>()
+
+    fun getIcon(context: Context, blockId: Int, size: Int = 80): Drawable {
+        val cached = iconCache[blockId]
+        if (cached != null) return BitmapDrawable(context.resources, cached)
+
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // 3D İzometrik Voxel Blok Çizimi
+        val half = size / 2f
+        val quarter = size / 4f
+        val eighth = size / 8f
+
+        val topCol: Int
+        val sideLCol: Int
+        val sideRCol: Int
+
+        when (blockId) {
+            1 -> { // Grass
+                topCol = Color.rgb(80, 175, 45)
+                sideLCol = Color.rgb(90, 60, 40)
+                sideRCol = Color.rgb(115, 75, 50)
+            }
+            2 -> { // Dirt
+                topCol = Color.rgb(115, 75, 50)
+                sideLCol = Color.rgb(90, 60, 40)
+                sideRCol = Color.rgb(130, 85, 55)
+            }
+            3 -> { // Stone
+                topCol = Color.rgb(140, 140, 140)
+                sideLCol = Color.rgb(110, 110, 110)
+                sideRCol = Color.rgb(160, 160, 160)
+            }
+            4 -> { // Cobble
+                topCol = Color.rgb(120, 120, 120)
+                sideLCol = Color.rgb(95, 95, 95)
+                sideRCol = Color.rgb(140, 140, 140)
+            }
+            5 -> { // Sand
+                topCol = Color.rgb(225, 215, 155)
+                sideLCol = Color.rgb(195, 185, 125)
+                sideRCol = Color.rgb(240, 230, 170)
+            }
+            7, 10 -> { // Oak / Birch Log
+                topCol = Color.rgb(160, 125, 80)
+                sideLCol = Color.rgb(90, 65, 40)
+                sideRCol = Color.rgb(115, 85, 55)
+            }
+            9, 11 -> { // Planks
+                topCol = Color.rgb(175, 130, 75)
+                sideLCol = Color.rgb(140, 100, 55)
+                sideRCol = Color.rgb(195, 145, 85)
+            }
+            19 -> { // Diamond Ore
+                topCol = Color.rgb(140, 140, 140)
+                sideLCol = Color.rgb(50, 210, 210)
+                sideRCol = Color.rgb(160, 160, 160)
+            }
+            32 -> { // Crafting Table
+                topCol = Color.rgb(180, 135, 80)
+                sideLCol = Color.rgb(145, 105, 60)
+                sideRCol = Color.rgb(130, 90, 50)
+            }
+            36 -> { // Torch
+                topCol = Color.YELLOW
+                sideLCol = Color.rgb(130, 90, 50)
+                sideRCol = Color.rgb(160, 115, 65)
+            }
+            44 -> { // TNT
+                topCol = Color.rgb(200, 50, 50)
+                sideLCol = Color.rgb(160, 40, 40)
+                sideRCol = Color.WHITE
+            }
+            else -> {
+                topCol = Color.rgb(150, 150, 150)
+                sideLCol = Color.rgb(110, 110, 110)
+                sideRCol = Color.rgb(180, 180, 180)
+            }
+        }
+
+        // Üst Yüzey (Elmas Şeklinde Eksen)
+        val topPath = Path().apply {
+            moveTo(half, eighth)
+            lineTo(size - eighth, quarter + eighth)
+            lineTo(half, half + eighth)
+            lineTo(eighth, quarter + eighth)
+            close()
+        }
+        p.color = topCol
+        c.drawPath(topPath, p)
+
+        // Sol Yüzey
+        val leftPath = Path().apply {
+            moveTo(eighth, quarter + eighth)
+            lineTo(half, half + eighth)
+            lineTo(half, size - eighth)
+            lineTo(eighth, size - quarter)
+            close()
+        }
+        p.color = sideLCol
+        c.drawPath(leftPath, p)
+
+        // Sağ Yüzey
+        val rightPath = Path().apply {
+            moveTo(half, half + eighth)
+            lineTo(size - eighth, quarter + eighth)
+            lineTo(size - eighth, size - quarter)
+            lineTo(half, size - eighth)
+            close()
+        }
+        p.color = sideRCol
+        c.drawPath(rightPath, p)
+
+        iconCache[blockId] = bmp
+        return BitmapDrawable(context.resources, bmp)
+    }
+}
+
+// 2. Vektörel Buton İkon Çizicisi (Metin Yok: Kazma, 3D Küp, Zıplama Oku)
+object VectorIconFactory {
+    fun createBreakIcon(context: Context, size: Int = 110): Drawable {
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeCap = Paint.Cap.ROUND
+        }
+
+        // Kazma Sapı
+        p.color = Color.rgb(170, 120, 70)
+        p.strokeWidth = size * 0.10f
+        c.drawLine(size * 0.25f, size * 0.75f, size * 0.70f, size * 0.30f, p)
+
+        // Kazma Ucu (Demir Arkı)
+        p.color = Color.WHITE
+        p.strokeWidth = size * 0.12f
+        val arcRect = RectF(size * 0.40f, size * 0.12f, size * 0.88f, size * 0.60f)
+        c.drawArc(arcRect, 180f, 120f, false, p)
+
+        return BitmapDrawable(context.resources, bmp)
+    }
+
+    fun createPlaceIcon(context: Context, size: Int = 110): Drawable {
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = size * 0.08f
+            color = Color.WHITE
+            strokeJoin = Paint.Join.ROUND
+        }
+
+        // 3D Vektörel İzometrik Küp İskeleti
+        val h = size / 2f
+        val q = size / 4f
+        val e = size * 0.15f
+
+        // Dış hatlar
+        c.drawLine(h, e, size - e, q + e * 0.5f, p)
+        c.drawLine(size - e, q + e * 0.5f, size - e, size - q, p)
+        c.drawLine(size - e, size - q, h, size - e * 0.5f, p)
+        c.drawLine(h, size - e * 0.5f, e, size - q, p)
+        c.drawLine(e, size - q, e, q + e * 0.5f, p)
+        c.drawLine(e, q + e * 0.5f, h, e, p)
+
+        // İç bağlantı Y çizgisi
+        c.drawLine(h, e, h, h + e * 0.5f, p)
+        c.drawLine(h, h + e * 0.5f, size - e, q + e * 0.5f, p)
+        c.drawLine(h, h + e * 0.5f, e, q + e * 0.5f, p)
+        c.drawLine(h, h + e * 0.5f, h, size - e * 0.5f, p)
+
+        return BitmapDrawable(context.resources, bmp)
+    }
+
+    fun createJumpIcon(context: Context, size: Int = 110): Drawable {
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE
+            strokeWidth = size * 0.12f
+            color = Color.WHITE
+            strokeCap = Paint.Cap.ROUND
+            strokeJoin = Paint.Join.ROUND
+        }
+
+        // MCPE Yukarı Zıplama Vektörü
+        val path = Path().apply {
+            moveTo(size * 0.25f, size * 0.55f)
+            lineTo(size * 0.50f, size * 0.28f)
+            lineTo(size * 0.75f, size * 0.55f)
+        }
+        c.drawPath(path, p)
+        c.drawLine(size * 0.50f, size * 0.30f, size * 0.50f, size * 0.75f, p)
+
+        return BitmapDrawable(context.resources, bmp)
+    }
 }
 
 object Engine {
@@ -104,7 +304,6 @@ class Activity : AndroidActivity() {
     private var isCamDragging = false
     private var camPointerId = -1
 
-    // D-Pad Hareket Durumu
     private var moveFwd = false
     private var moveBack = false
     private var moveLeft = false
@@ -170,11 +369,11 @@ class Activity : AndroidActivity() {
         // 1. Crosshair
         val chV = View(this).apply {
             background = GradientDrawable().apply { setColor(Color.argb(180, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(4, 30).apply { gravity = Gravity.CENTER }
+            layoutParams = FrameLayout.LayoutParams(4, 32).apply { gravity = Gravity.CENTER }
         }
         val chH = View(this).apply {
             background = GradientDrawable().apply { setColor(Color.argb(180, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(30, 4).apply { gravity = Gravity.CENTER }
+            layoutParams = FrameLayout.LayoutParams(32, 4).apply { gravity = Gravity.CENTER }
         }
         hud.addView(chV)
         hud.addView(chH)
@@ -187,15 +386,15 @@ class Activity : AndroidActivity() {
             }
         }
 
-        fun createDpadBtn(text: String, rule: Int): Button {
+        fun createDpadBtn(symbol: String, rule: Int): Button {
             return Button(this).apply {
-                setText(text)
-                textSize = 16f
+                text = symbol
+                textSize = 18f
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
-                    setColor(Color.argb(120, 40, 40, 40))
-                    cornerRadius = 12f
-                    setStroke(2, Color.argb(150, 180, 180, 180))
+                    setColor(Color.argb(120, 30, 30, 30))
+                    cornerRadius = 14f
+                    setStroke(2, Color.argb(140, 200, 200, 200))
                 }
                 layoutParams = RelativeLayout.LayoutParams(100, 100).apply {
                     addRule(rule)
@@ -239,7 +438,7 @@ class Activity : AndroidActivity() {
         dpad.addView(btnRight)
         hud.addView(dpad)
 
-        // 3. Sağ MCPE Zıplama & Eğilme ve Hızlı Eylem Butonları
+        // 3. Sağ Vektörel SVG Eylem Butonları (Yazısız: Kazma, 3D Küp, Zıpla)
         val rightActionArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -248,34 +447,32 @@ class Activity : AndroidActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
-                setMargins(0, 0, 40, 40)
+                setMargins(0, 0, 45, 45)
             }
         }
 
-        fun createRoundActionBtn(txt: String, size: Int, color: Int, onAction: () -> Unit): Button {
-            return Button(this).apply {
-                text = txt
-                textSize = 12f
-                setTextColor(Color.WHITE)
+        fun createSvgActionBtn(iconDrawable: Drawable, bgColor: Int, onClick: () -> Unit): ImageButton {
+            return ImageButton(this).apply {
+                setImageDrawable(iconDrawable)
+                scaleType = ImageView.ScaleType.CENTER_INSIDE
                 background = GradientDrawable().apply {
                     shape = GradientDrawable.OVAL
-                    setColor(color)
-                    setStroke(2, Color.WHITE)
+                    setColor(bgColor)
+                    setStroke(2, Color.argb(200, 255, 255, 255))
                 }
-                layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                layoutParams = LinearLayout.LayoutParams(125, 125).apply {
                     setMargins(8, 8, 8, 8)
                 }
-                setOnClickListener { onAction() }
+                setOnClickListener { onClick() }
             }
         }
 
-        // Kır & Koy & Zıpla
-        rightActionArea.addView(createRoundActionBtn("KIR", 120, Color.argb(150, 180, 50, 50)) { Engine.nativeTap(0) })
-        rightActionArea.addView(createRoundActionBtn("KOY", 120, Color.argb(150, 50, 150, 50)) { Engine.nativeTap(1) })
-        rightActionArea.addView(createRoundActionBtn("⯅", 130, Color.argb(150, 70, 70, 70)) { Engine.nativeJump() })
+        rightActionArea.addView(createSvgActionBtn(VectorIconFactory.createBreakIcon(this), Color.argb(160, 180, 45, 45)) { Engine.nativeTap(0) })
+        rightActionArea.addView(createSvgActionBtn(VectorIconFactory.createPlaceIcon(this), Color.argb(160, 45, 150, 55)) { Engine.nativeTap(1) })
+        rightActionArea.addView(createSvgActionBtn(VectorIconFactory.createJumpIcon(this),  Color.argb(160, 60, 60, 60))   { Engine.nativeJump() })
         hud.addView(rightActionArea)
 
-        // 4. MCPE Orijinal 9'lu Hotbar ve "..." Envanter Butonu
+        // 4. MCPE 9'lu Hotbar (Blok Önizlemeli + Sayı Göstergeli)
         val hotbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -284,62 +481,87 @@ class Activity : AndroidActivity() {
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = 16
+                bottomMargin = 14
             }
         }
 
         val hotbarSlots = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = GradientDrawable().apply {
-                setColor(Color.argb(160, 20, 20, 20))
-                cornerRadius = 8f
+                setColor(Color.argb(170, 25, 25, 25))
+                cornerRadius = 10f
                 setStroke(2, Color.argb(180, 100, 100, 100))
             }
             setPadding(4, 4, 4, 4)
         }
 
-        val blockNames = arrayOf("Tahta", "Kırıktaş", "Elmas", "Masa", "Meşale", "6", "7", "8", "9")
+        // Slot Block ID listesi: Tahta, Kırıktaş, Elmas, Çalışma Masası, Meşale, Çimen, Toprak, Kütük, TNT
+        val initialBlockIds = intArrayOf(9, 4, 19, 32, 36, 1, 2, 7, 44)
 
         for (i in 0 until 9) {
-            val slot = TextView(this).apply {
-                text = blockNames[i]
-                textSize = 9f
-                setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
+            val slotContainer = FrameLayout(this).apply {
                 background = GradientDrawable().apply {
-                    setColor(if (i == 0) Color.argb(180, 120, 120, 120) else Color.argb(60, 0, 0, 0))
-                    cornerRadius = 6f
+                    setColor(if (i == 0) Color.argb(180, 130, 130, 130) else Color.argb(60, 0, 0, 0))
+                    cornerRadius = 8f
                     setStroke(if (i == 0) 3 else 1, if (i == 0) Color.WHITE else Color.GRAY)
                 }
-                layoutParams = LinearLayout.LayoutParams(90, 90).apply {
+                layoutParams = LinearLayout.LayoutParams(92, 92).apply {
                     setMargins(3, 3, 3, 3)
                 }
-                setOnClickListener {
-                    Engine.nativeSelectSlot(i)
-                    for (j in 0 until hotbarSlots.childCount) {
-                        (hotbarSlots.getChildAt(j).background as GradientDrawable).apply {
-                            setColor(if (j == i) Color.argb(180, 120, 120, 120) else Color.argb(60, 0, 0, 0))
-                            setStroke(if (j == i) 3 else 1, if (j == i) Color.WHITE else Color.GRAY)
-                        }
+            }
+
+            // Blok Önizleme Resmi
+            val blockIcon = ImageView(this).apply {
+                setImageDrawable(BlockIconFactory.getIcon(this@Activity, initialBlockIds[i]))
+                scaleType = ImageView.ScaleType.FIT_CENTER
+                layoutParams = FrameLayout.LayoutParams(70, 70).apply {
+                    gravity = Gravity.CENTER
+                }
+            }
+            slotContainer.addView(blockIcon)
+
+            // Eşya Miktarı
+            val countText = TextView(this).apply {
+                text = if (i == 3) "16" else "64"
+                textSize = 10f
+                setTextColor(Color.WHITE)
+                setShadowLayer(3f, 1f, 1f, Color.BLACK)
+                layoutParams = FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                ).apply {
+                    gravity = Gravity.BOTTOM or Gravity.END
+                    setMargins(0, 0, 6, 2)
+                }
+            }
+            slotContainer.addView(countText)
+
+            slotContainer.setOnClickListener {
+                Engine.nativeSelectSlot(i)
+                for (j in 0 until hotbarSlots.childCount) {
+                    (hotbarSlots.getChildAt(j).background as GradientDrawable).apply {
+                        setColor(if (j == i) Color.argb(180, 130, 130, 130) else Color.argb(60, 0, 0, 0))
+                        setStroke(if (j == i) 3 else 1, if (j == i) Color.WHITE else Color.GRAY)
                     }
                 }
             }
-            hotbarSlots.addView(slot)
+
+            hotbarSlots.addView(slotContainer)
         }
         hotbarContainer.addView(hotbarSlots)
 
-        // MCPE "..." Envanter Butonu
+        // MCPE "•••" Envanter Butonu
         val invBtn = Button(this).apply {
             text = "•••"
-            textSize = 14f
+            textSize = 15f
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
-                setColor(Color.argb(160, 35, 35, 35))
-                cornerRadius = 8f
+                setColor(Color.argb(170, 40, 40, 40))
+                cornerRadius = 10f
                 setStroke(2, Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(90, 90).apply {
-                marginStart = 12
+            layoutParams = LinearLayout.LayoutParams(92, 92).apply {
+                marginStart = 10
             }
             setOnClickListener { showInventoryDialog() }
         }
@@ -352,19 +574,19 @@ class Activity : AndroidActivity() {
             textSize = 14f
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
-                setColor(Color.argb(140, 40, 40, 40))
+                setColor(Color.argb(140, 35, 35, 35))
                 cornerRadius = 8f
                 setStroke(1, Color.WHITE)
             }
             layoutParams = FrameLayout.LayoutParams(80, 80).apply {
                 gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-                topMargin = 20
+                topMargin = 18
             }
             setOnClickListener { showPauseMenu() }
         }
         hud.addView(pauseBtn)
 
-        // Dokunmatik Kamera Kaydırma Katmanı
+        // Dokunmatik Kamera Katmanı
         hud.setOnTouchListener { _, event ->
             val pIdx = event.actionIndex
             val pId = event.getPointerId(pIdx)
@@ -373,7 +595,6 @@ class Activity : AndroidActivity() {
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    // Sadece sağ ekranda boş alana basınca kamera sürükle
                     if (x > root.width * 0.35f && !isCamDragging) {
                         isCamDragging = true
                         camPointerId = pId
@@ -416,7 +637,7 @@ class Activity : AndroidActivity() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.argb(230, 25, 25, 25))
+            setBackgroundColor(Color.argb(235, 20, 20, 20))
         }
 
         val title = TextView(this).apply {
@@ -438,14 +659,11 @@ class Activity : AndroidActivity() {
                 val item = invData.getJSONObject(i)
                 val count = item.getInt("count")
                 val id = item.getInt("id")
-                val slotView = TextView(this).apply {
-                    text = if (count > 0) "ID:$id\nx$count" else ""
-                    textSize = 10f
-                    setTextColor(Color.YELLOW)
-                    gravity = Gravity.CENTER
+
+                val slotContainer = FrameLayout(this).apply {
                     background = GradientDrawable().apply {
-                        setColor(Color.argb(120, 60, 60, 60))
-                        setStroke(2, Color.WHITE)
+                        setColor(Color.argb(120, 50, 50, 50))
+                        setStroke(2, Color.argb(150, 180, 180, 180))
                         cornerRadius = 8f
                     }
                     layoutParams = GridLayout.LayoutParams().apply {
@@ -454,7 +672,34 @@ class Activity : AndroidActivity() {
                         setMargins(4, 4, 4, 4)
                     }
                 }
-                grid.addView(slotView)
+
+                if (count > 0 && id > 0) {
+                    val icon = ImageView(this).apply {
+                        setImageDrawable(BlockIconFactory.getIcon(this@Activity, id))
+                        scaleType = ImageView.ScaleType.FIT_CENTER
+                        layoutParams = FrameLayout.LayoutParams(75, 75).apply {
+                            gravity = Gravity.CENTER
+                        }
+                    }
+                    slotContainer.addView(icon)
+
+                    val countText = TextView(this).apply {
+                        text = "$count"
+                        textSize = 11f
+                        setTextColor(Color.WHITE)
+                        setShadowLayer(3f, 1f, 1f, Color.BLACK)
+                        layoutParams = FrameLayout.LayoutParams(
+                            ViewGroup.LayoutParams.WRAP_CONTENT,
+                            ViewGroup.LayoutParams.WRAP_CONTENT
+                        ).apply {
+                            gravity = Gravity.BOTTOM or Gravity.END
+                            setMargins(0, 0, 6, 2)
+                        }
+                    }
+                    slotContainer.addView(countText)
+                }
+
+                grid.addView(slotContainer)
             }
         } catch (_: Exception) {}
 
@@ -462,8 +707,15 @@ class Activity : AndroidActivity() {
 
         val closeBtn = Button(this).apply {
             text = "Kapat"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                setColor(Color.argb(200, 70, 70, 70))
+                cornerRadius = 10f
+                setStroke(2, Color.WHITE)
+            }
+            layoutParams = LinearLayout.LayoutParams(260, 95).apply { topMargin = 25 }
             setOnClickListener { dialog.dismiss(); applyFullScreen() }
-            layoutParams = LinearLayout.LayoutParams(250, 90).apply { topMargin = 20 }
         }
         layout.addView(closeBtn)
 
@@ -476,7 +728,7 @@ class Activity : AndroidActivity() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.argb(235, 20, 20, 20))
+            setBackgroundColor(Color.argb(235, 18, 18, 18))
         }
 
         val title = TextView(this).apply {
@@ -494,7 +746,7 @@ class Activity : AndroidActivity() {
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
                     cornerRadius = 12f
-                    setColor(Color.argb(200, 60, 60, 60))
+                    setColor(Color.argb(200, 55, 55, 55))
                     setStroke(2, Color.WHITE)
                 }
                 layoutParams = LinearLayout.LayoutParams(380, 100).apply {

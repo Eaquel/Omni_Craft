@@ -28,13 +28,13 @@
 
 static constexpr int CS        = 16;
 static constexpr int WH        = 128;
-static constexpr int RD        = 5;   // Dengeli mobil render mesafesi
-static constexpr int SEA_LEVEL = 30;
+static constexpr int RD        = 5;
+static constexpr int SEA_LEVEL = 32;
 static constexpr float GRAVITY = -24.0f;
 static constexpr float JUMP_VEL= 8.4f;
-static constexpr float WALK_SPD= 4.3f;
+static constexpr float WALK_SPD= 4.317f;
 static constexpr float SPRINT_SPD= 6.2f;
-static constexpr float SNEAK_SPD= 1.4f;
+static constexpr float SNEAK_SPD= 1.3f;
 static constexpr float REACH   = 5.5f;
 static constexpr int INV_SIZE  = 36;
 static constexpr int HOTBAR_SZ = 9;
@@ -89,14 +89,19 @@ struct Vec3 {
 struct Vec3i { int x, y, z; bool operator==(const Vec3i& o) const { return x==o.x && y==o.y && z==o.z; } };
 
 struct Mat4 {
-    float m[16] = {};
-    Mat4 operator*(const Mat4& o) const {
-        Mat4 r;
-        for(int i=0; i<4; ++i)
-            for(int j=0; j<4; ++j)
-                for(int k=0; k<4; ++k)
-                    r.m[i*4+j] += m[i*4+k] * o.m[k*4+j];
-        return r;
+    float m[16] = {0};
+    // OpenGL ES 3.2 uyumlu standart Sütun-Öncelikli (Column-Major) matris çarpımı
+    Mat4 operator*(const Mat4& b) const {
+        Mat4 res;
+        for (int c = 0; c < 4; ++c) {
+            for (int r = 0; r < 4; ++r) {
+                res.m[c * 4 + r] = m[0 * 4 + r] * b.m[c * 4 + 0] +
+                                   m[1 * 4 + r] * b.m[c * 4 + 1] +
+                                   m[2 * 4 + r] * b.m[c * 4 + 2] +
+                                   m[3 * 4 + r] * b.m[c * 4 + 3];
+            }
+        }
+        return res;
     }
 };
 
@@ -184,7 +189,7 @@ public:
 };
 
 struct Player {
-    Vec3 pos{0, 50, 0}, vel{};
+    Vec3 pos{0.5f, 60.0f, 0.5f}, vel{};
     float yaw = 0, pitch = 0;
     float eyeH = 1.62f;
     bool onGround = false;

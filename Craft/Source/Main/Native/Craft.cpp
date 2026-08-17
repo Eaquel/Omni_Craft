@@ -31,7 +31,6 @@ static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     _exit(1);
 }
 
-// 51 Blokluk MC Tablosu
 static constexpr BlockDef BLOCK_TABLE[BLOCK_COUNT] = {
     {"hava",        false, true,  false, false, 0.0f, 0.6f, 0,  0,  0,  AIR},
     {"cimen",       true,  false, false, false, 0.6f, 0.6f, 0,  1,  2,  DIRT},
@@ -69,7 +68,7 @@ static constexpr BlockDef BLOCK_TABLE[BLOCK_COUNT] = {
     {"firin",       true,  false, false, false, 3.5f, 0.6f, 4,  4,  4,  FURNACE},
     {"sandik",      true,  false, false, false, 2.5f, 0.6f, 5,  5,  5,  CHEST},
     {"merdiven",    false, true,  false, false, 0.4f, 0.6f, 5,  5,  5,  LADDER},
-    {"mesale",      false, true,  false, false, 0.0f, 0.6f, 5,  5,  5,  TORCH},
+    {"mesale",      false, true,  false, false, 0.0f, 0.6f, 15, 15, 15, TORCH},
     {"bedrock",     true,  false, false, false, -1.f, 0.6f, 11, 11, 11, BEDROCK},
     {"kar_katmani", true,  false, false, false, 0.2f, 0.3f, 13, 13, 13, SNOW_LAYER},
     {"buz",         true,  true,  false, false, 0.5f, 0.02f,14, 14, 14, AIR},
@@ -90,7 +89,6 @@ static inline const BlockDef& BD(uint8_t id) { return BLOCK_TABLE[id < BLOCK_COU
 static inline float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
 static inline int flr(float f) { return static_cast<int>(std::floor(f)); }
 
-// Doğal 2D Fractal Noise Fonksiyonları
 static inline float hash2D(int x, int z) {
     int n = x * 374761393 + z * 668265263;
     n = (n ^ (n >> 13)) * 1274126177;
@@ -114,30 +112,51 @@ static inline float smoothNoise(float x, float z) {
 
 static inline float getTerrainHeight(float x, float z) {
     float h = 0.0f;
-    h += smoothNoise(x * 0.015f, z * 0.015f) * 22.0f;
-    h += smoothNoise(x * 0.04f,  z * 0.04f)  * 10.0f;
-    h += smoothNoise(x * 0.1f,   z * 0.1f)   * 3.0f;
-    return 24.0f + h; // Ortalama yükseklik 35-45 arası
+    h += smoothNoise(x * 0.015f, z * 0.015f) * 18.0f;
+    h += smoothNoise(x * 0.05f,  z * 0.05f)  * 8.0f;
+    return 30.0f + h;
 }
 
-static Mat4 matPerspective(float fov, float asp, float nearZ, float farZ) {
-    Mat4 m; float f = 1.0f / tanf(fov * 0.5f);
-    m.m[0] = f / asp; m.m[5] = f;
-    m.m[10] = (farZ + nearZ) / (nearZ - farZ); m.m[11] = -1.0f;
-    m.m[14] = (2.0f * farZ * nearZ) / (nearZ - farZ);
-    return m;
+// Standart OpenGL ES 3.2 Projeksiyon Matrisi (Column-Major)
+static Mat4 matPerspective(float fovRad, float aspect, float nearZ, float farZ) {
+    Mat4 res;
+    float f = 1.0f / tanf(fovRad * 0.5f);
+    res.m[0]  = f / aspect;
+    res.m[5]  = f;
+    res.m[10] = (farZ + nearZ) / (nearZ - farZ);
+    res.m[11] = -1.0f;
+    res.m[14] = (2.0f * farZ * nearZ) / (nearZ - farZ);
+    res.m[15] = 0.0f;
+    return res;
 }
 
-static Mat4 matLookAt(Vec3 eye, Vec3 ctr, Vec3 up) {
-    Vec3 f = (ctr - eye).norm();
+// Standart OpenGL ES 3.2 Görünüm Matrisi (Column-Major)
+static Mat4 matLookAt(Vec3 eye, Vec3 center, Vec3 up) {
+    Vec3 f = (center - eye).norm();
     Vec3 r = f.cross(up).norm();
     Vec3 u = r.cross(f);
-    Mat4 m;
-    m.m[0] = r.x;  m.m[4] = r.y;  m.m[8]  = r.z;  m.m[12] = -(r.x * eye.x + r.y * eye.y + r.z * eye.z);
-    m.m[1] = u.x;  m.m[5] = u.y;  m.m[9]  = u.z;  m.m[13] = -(u.x * eye.x + u.y * eye.y + u.z * eye.z);
-    m.m[2] = -f.x; m.m[6] = -f.y; m.m[10] = -f.z; m.m[14] =  (f.x * eye.x + f.y * eye.y + f.z * eye.z);
-    m.m[15] = 1.0f;
-    return m;
+
+    Mat4 res;
+    res.m[0] = r.x;
+    res.m[1] = u.x;
+    res.m[2] = -f.x;
+    res.m[3] = 0.0f;
+
+    res.m[4] = r.y;
+    res.m[5] = u.y;
+    res.m[6] = -f.y;
+    res.m[7] = 0.0f;
+
+    res.m[8] = r.z;
+    res.m[9] = u.z;
+    res.m[10] = -f.z;
+    res.m[11] = 0.0f;
+
+    res.m[12] = -(r.x * eye.x + r.y * eye.y + r.z * eye.z);
+    res.m[13] = -(u.x * eye.x + u.y * eye.y + u.z * eye.z);
+    res.m[14] =  (f.x * eye.x + f.y * eye.y + f.z * eye.z);
+    res.m[15] = 1.0f;
+    return res;
 }
 
 bool Inventory::add(uint16_t id, int cnt) {
@@ -188,6 +207,26 @@ void Chunk::buildMesh(const World& world) {
         return world.blockAt(cx * CS + lx, ly, cz * CS + lz);
     };
 
+    auto addQuad = [&](int tile, float light,
+                       float x0, float y0, float z0,
+                       float x1, float y1, float z1,
+                       float x2, float y2, float z2,
+                       float x3, float y3, float z3) {
+        float tx = (tile % 4) * 0.25f;
+        float ty = (tile / 4) * 0.25f;
+        float tw = 0.25f;
+
+        // Tri 1: (0, 1, 2)
+        verts.push_back({x0, y0, z0, tx,      ty+tw, light});
+        verts.push_back({x1, y1, z1, tx+tw,   ty+tw, light});
+        verts.push_back({x2, y2, z2, tx+tw,   ty,    light});
+
+        // Tri 2: (0, 2, 3)
+        verts.push_back({x0, y0, z0, tx,      ty+tw, light});
+        verts.push_back({x2, y2, z2, tx+tw,   ty,    light});
+        verts.push_back({x3, y3, z3, tx,      ty,    light});
+    };
+
     for (int x = 0; x < CS; ++x) {
         for (int y = 0; y < WH; ++y) {
             for (int z = 0; z < CS; ++z) {
@@ -198,54 +237,59 @@ void Chunk::buildMesh(const World& world) {
                 float wy = static_cast<float>(y);
                 float wz = static_cast<float>(cz * CS + z);
 
-                auto addFace = [&](int tile, float l, const float* pos) {
-                    float tx = (tile % 4) * 0.25f;
-                    float ty = (tile / 4) * 0.25f;
-                    float tw = 0.25f;
-
-                    verts.push_back({pos[0]+wx, pos[1]+wy, pos[2]+wz, tx, ty, l});
-                    verts.push_back({pos[3]+wx, pos[4]+wy, pos[5]+wz, tx+tw, ty, l});
-                    verts.push_back({pos[6]+wx, pos[7]+wy, pos[8]+wz, tx+tw, ty+tw, l});
-                    verts.push_back({pos[0]+wx, pos[1]+wy, pos[2]+wz, tx, ty, l});
-                    verts.push_back({pos[6]+wx, pos[7]+wy, pos[8]+wz, tx+tw, ty+tw, l});
-                    verts.push_back({pos[9]+wx, pos[10]+wy, pos[11]+wz, tx, ty+tw, l});
-                };
-
-                // +Y
+                // +Y (Üst Yüzey - CCW)
                 uint8_t bTop = getBlock(x, y + 1, z);
                 if (!BD(bTop).solid || (bTop == WATER && id != WATER)) {
-                    float p[] = {0,1,1, 1,1,1, 1,1,0, 0,1,0};
-                    addFace(BD(id).topTile, 1.0f, p);
+                    addQuad(BD(id).topTile, 1.0f,
+                            wx+0, wy+1, wz+0,
+                            wx+0, wy+1, wz+1,
+                            wx+1, wy+1, wz+1,
+                            wx+1, wy+1, wz+0);
                 }
-                // -Y
+                // -Y (Alt Yüzey - CCW)
                 uint8_t bBot = getBlock(x, y - 1, z);
                 if (!BD(bBot).solid) {
-                    float p[] = {0,0,0, 1,0,0, 1,0,1, 0,0,1};
-                    addFace(BD(id).botTile, 0.5f, p);
+                    addQuad(BD(id).botTile, 0.5f,
+                            wx+0, wy+0, wz+1,
+                            wx+0, wy+0, wz+0,
+                            wx+1, wy+0, wz+0,
+                            wx+1, wy+0, wz+1);
                 }
-                // +Z
+                // +Z (Ön Yüzey - CCW)
                 uint8_t bFwd = getBlock(x, y, z + 1);
                 if (!BD(bFwd).solid) {
-                    float p[] = {0,0,1, 1,0,1, 1,1,1, 0,1,1};
-                    addFace(BD(id).sideTile, 0.8f, p);
+                    addQuad(BD(id).sideTile, 0.85f,
+                            wx+0, wy+0, wz+1,
+                            wx+1, wy+0, wz+1,
+                            wx+1, wy+1, wz+1,
+                            wx+0, wy+1, wz+1);
                 }
-                // -Z
+                // -Z (Arka Yüzey - CCW)
                 uint8_t bBack = getBlock(x, y, z - 1);
                 if (!BD(bBack).solid) {
-                    float p[] = {1,0,0, 0,0,0, 0,1,0, 1,1,0};
-                    addFace(BD(id).sideTile, 0.8f, p);
+                    addQuad(BD(id).sideTile, 0.85f,
+                            wx+1, wy+0, wz+0,
+                            wx+0, wy+0, wz+0,
+                            wx+0, wy+1, wz+0,
+                            wx+1, wy+1, wz+0);
                 }
-                // +X
+                // +X (Sağ Yüzey - CCW)
                 uint8_t bRight = getBlock(x + 1, y, z);
                 if (!BD(bRight).solid) {
-                    float p[] = {1,0,1, 1,0,0, 1,1,0, 1,1,1};
-                    addFace(BD(id).sideTile, 0.7f, p);
+                    addQuad(BD(id).sideTile, 0.70f,
+                            wx+1, wy+0, wz+1,
+                            wx+1, wy+0, wz+0,
+                            wx+1, wy+1, wz+0,
+                            wx+1, wy+1, wz+1);
                 }
-                // -X
+                // -X (Sol Yüzey - CCW)
                 uint8_t bLeft = getBlock(x - 1, y, z);
                 if (!BD(bLeft).solid) {
-                    float p[] = {0,0,0, 0,0,1, 0,1,1, 0,1,0};
-                    addFace(BD(id).sideTile, 0.7f, p);
+                    addQuad(BD(id).sideTile, 0.70f,
+                            wx+0, wy+0, wz+0,
+                            wx+0, wy+0, wz+1,
+                            wx+0, wy+1, wz+1,
+                            wx+0, wy+1, wz+0);
                 }
             }
         }
@@ -310,7 +354,6 @@ void World::generateChunk(Chunk& c) {
             int h = flr(getTerrainHeight(static_cast<float>(wx), static_cast<float>(wz)));
             if (h >= WH - 10) h = WH - 10;
 
-            // Taş & Madenler
             for (int y = 1; y < h - 3; ++y) {
                 if (y < 16 && (wx * 13 + y * 7 + wz * 17) % 31 == 0) c.set(x, y, z, DIAMOND_ORE);
                 else if (y < 35 && (wx * 11 + y * 5 + wz * 13) % 21 == 0) c.set(x, y, z, IRON_ORE);
@@ -318,7 +361,6 @@ void World::generateChunk(Chunk& c) {
                 else c.set(x, y, z, STONE);
             }
 
-            // Toprak / Kum
             if (h <= SEA_LEVEL + 1) {
                 for (int y = std::max(1, h - 3); y <= h; ++y) c.set(x, y, z, SAND);
             } else {
@@ -326,13 +368,11 @@ void World::generateChunk(Chunk& c) {
                 c.set(x, h, z, GRASS);
             }
 
-            // Su Seviyesi
             for (int y = h + 1; y <= SEA_LEVEL; ++y) {
                 c.set(x, y, z, WATER);
             }
 
-            // Doğal Meşe Ağaçları (Sadece çimen üzerinde)
-            if (h > SEA_LEVEL + 1 && (hash2D(wx * 3, wz * 7) > 0.94f) && x >= 2 && x <= CS - 3 && z >= 2 && z <= CS - 3) {
+            if (h > SEA_LEVEL + 1 && (hash2D(wx * 5, wz * 11) > 0.96f) && x >= 2 && x <= CS - 3 && z >= 2 && z <= CS - 3) {
                 for (int ty = h + 1; ty <= h + 5; ++ty) c.set(x, ty, z, OAK_LOG);
                 for (int lx = x - 2; lx <= x + 2; ++lx) {
                     for (int lz = z - 2; lz <= z + 2; ++lz) {
@@ -346,7 +386,7 @@ void World::generateChunk(Chunk& c) {
         }
     }
 
-    if ((c.cx + c.cz) % 3 == 0) {
+    if ((c.cx + c.cz) % 4 == 0) {
         int h = flr(getTerrainHeight(bx + 8.0f, bz + 8.0f));
         if (h > SEA_LEVEL) {
             spawnMob(ENT_PIG, {(float)bx + 8, (float)h + 1.2f, (float)bz + 8});
@@ -571,6 +611,11 @@ void Renderer::generateProceduralAtlas() {
                     case 14: // Water
                         c = 0xBB000000 | ((40 + noise) << 16) | ((80 + noise) << 8) | (210 + noise);
                         break;
+                    case 15: // Torch
+                        if (x>=6 && x<=9 && y>=4 && y<=15) c = 0xFF000000 | (120<<16) | (80<<8) | 40;
+                        else if (x>=6 && x<=9 && y<=3) c = 0xFF00FFFF;
+                        else c = 0x00000000;
+                        break;
                     default:
                         c = 0xFF888888;
                 }
@@ -688,9 +733,9 @@ void Renderer::resize(int w, int h) {
 void Renderer::drawEntityBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw) {
     Mat4 model;
     float rad = yaw * 0.01745329f;
-    model.m[0] = scale.x * cosf(rad); model.m[2] = scale.x * sinf(rad);
-    model.m[5] = scale.y;
-    model.m[8] = scale.z * -sinf(rad); model.m[10] = scale.z * cosf(rad);
+    model.m[0]  = scale.x * cosf(rad); model.m[2]  = scale.x * sinf(rad);
+    model.m[5]  = scale.y;
+    model.m[8]  = scale.z * -sinf(rad);model.m[10] = scale.z * cosf(rad);
     model.m[12] = pos.x; model.m[13] = pos.y; model.m[14] = pos.z; model.m[15] = 1.0f;
     Mat4 mvp = vp * model;
 
@@ -707,7 +752,7 @@ void Renderer::frame(World& world, Player& player) {
     glClearColor(0.53f, 0.81f, 0.92f, 1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    Mat4 proj = matPerspective(1.222f, (float)screenW / (float)screenH, 0.05f, 350.0f);
+    Mat4 proj = matPerspective(1.222f, (float)screenW / (float)screenH, 0.1f, 350.0f);
     Vec3 eye = player.pos + Vec3{0, player.eyeH, 0};
     Mat4 view = matLookAt(eye, eye + player.lookDir(), {0, 1, 0});
     Mat4 vp = proj * view;
@@ -747,7 +792,6 @@ void Renderer::frame(World& world, Player& player) {
     }
 }
 
-// 3D Voxel Kutu Çarpışma Kontrolü (AABB)
 static bool checkCollision(const World& world, Vec3 pos) {
     float r = 0.3f;
     float h = 1.8f;
@@ -797,7 +841,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->world->worldPath = gState->saveDirectory;
     gState->renderer.init(w, h);
 
-    // Çevre chunkları üret
     for (int dx = -RD; dx <= RD; ++dx) {
         for (int dz = -RD; dz <= RD; ++dz) {
             auto ch = gState->world->getOrCreate(dx, dz);
@@ -805,16 +848,22 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
         }
     }
 
-    // Oyuncuyu tam yüzeye yerleştir
     int spawnY = gState->world->getHighestBlock(0, 0);
     gState->player.pos = {0.5f, static_cast<float>(spawnY) + 1.2f, 0.5f};
-    gState->player.inv.add(OAK_PLANKS, 64);
-    gState->player.inv.add(COBBLESTONE, 64);
-    gState->player.inv.add(DIAMOND_ORE, 64);
-    gState->player.inv.add(CRAFTING_TABLE, 16);
-    gState->player.inv.add(TORCH, 64);
+    
+    // Varsayılan Envanter Eşyaları
+    gState->player.inv.slots[0] = ItemStack(OAK_PLANKS, 64);
+    gState->player.inv.slots[1] = ItemStack(COBBLESTONE, 64);
+    gState->player.inv.slots[2] = ItemStack(DIAMOND_ORE, 64);
+    gState->player.inv.slots[3] = ItemStack(CRAFTING_TABLE, 16);
+    gState->player.inv.slots[4] = ItemStack(TORCH, 64);
+    gState->player.inv.slots[5] = ItemStack(GRASS, 64);
+    gState->player.inv.slots[6] = ItemStack(DIRT, 64);
+    gState->player.inv.slots[7] = ItemStack(OAK_LOG, 64);
+    gState->player.inv.slots[8] = ItemStack(TNT, 64);
+
     gState->initialized = true;
-    LOGI("Minecraft PE Motoru Baslatildi. Dogus Noktasi: [0, %d, 0]", spawnY);
+    LOGI("Minecraft Engine Baslatildi. Spawn: [0, %d, 0]", spawnY);
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeResize(JNIEnv*, jclass, jint w, jint h) {
@@ -834,7 +883,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     float yaw = gs.player.yaw * (3.14159265f / 180.0f);
     float spd = gs.player.sprinting ? SPRINT_SPD : (gs.player.sneaking ? SNEAK_SPD : WALK_SPD);
     
-    // Giriş yönünü kameraya göre hesapla
     float fwd = gs.inputZ * spd;
     float str = gs.inputX * spd;
 
@@ -848,24 +896,19 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.vel.z = moveDir.z;
     gs.player.vel.y += GRAVITY * sdt;
 
-    // AABB Çarpışma Çözümleyicisi (X, Z, Y eksenlerinde ayrık kontrol)
     Vec3 p = gs.player.pos;
-    
-    // X Hareketi
     p.x += gs.player.vel.x * sdt;
     if (checkCollision(*gs.world, p)) {
         p.x = gs.player.pos.x;
         gs.player.vel.x = 0;
     }
 
-    // Z Hareketi
     p.z += gs.player.vel.z * sdt;
     if (checkCollision(*gs.world, p)) {
         p.z = gs.player.pos.z;
         gs.player.vel.z = 0;
     }
 
-    // Y Hareketi
     p.y += gs.player.vel.y * sdt;
     if (checkCollision(*gs.world, p)) {
         if (gs.player.vel.y < 0) {
@@ -879,7 +922,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
-    // Eşyaları toplama
     {
         std::lock_guard lk(gs.world->entityMtx);
         for (auto& e : gs.world->entities) {
@@ -912,7 +954,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jin
     if (!gState) return;
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, 1.62f, 0}, gState->player.lookDir(), REACH);
     if (type == 0 && hit.hit) {
-        // Blok Kır
         uint8_t oldB = gState->world->blockAt(hit.block.x, hit.block.y, hit.block.z);
         gState->world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
         uint16_t drop = BD(oldB).dropId;
@@ -920,11 +961,9 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTap(JNIEnv*, jclass, jin
             gState->world->spawnItemDrop(drop, {(float)hit.block.x + 0.5f, (float)hit.block.y + 0.5f, (float)hit.block.z + 0.5f}, {0, 2.5f, 0});
         }
     } else if (type == 1 && hit.hit) {
-        // Blok Koy
         ItemStack& held = gState->player.inv.active();
         if (!held.empty() && held.id < BLOCK_COUNT) {
             Vec3i target = {hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z};
-            // Oyuncunun kendi durduğu yere blok koyup sıkışmasını engelle
             Vec3 bCenter = {(float)target.x + 0.5f, (float)target.y + 0.5f, (float)target.z + 0.5f};
             if ((bCenter - (gState->player.pos + Vec3{0, 0.9f, 0})).len() > 0.8f) {
                 gState->world->setBlock(target.x, target.y, target.z, (uint8_t)held.id);
