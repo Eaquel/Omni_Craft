@@ -53,7 +53,7 @@ object CraftLogger {
 object BlockIconFactory {
     private val iconCache = HashMap<Int, Bitmap>()
 
-    fun getIcon(context: Context, blockId: Int, size: Int = 96): Drawable {
+    fun getIcon(context: Context, blockId: Int, size: Int = 80): Drawable {
         val cached = iconCache[blockId]
         if (cached != null) return BitmapDrawable(context.resources, cached)
 
@@ -163,7 +163,7 @@ object BlockIconFactory {
         c.drawPath(rightPath, p)
 
         p.style = Paint.Style.STROKE
-        p.strokeWidth = 2f
+        p.strokeWidth = 1.5f
         p.color = Color.argb(120, 0, 0, 0)
         c.drawPath(topPath, p)
         c.drawPath(leftPath, p)
@@ -175,14 +175,14 @@ object BlockIconFactory {
 }
 
 object VectorIconFactory {
-    fun createBreakIcon(context: Context, size: Int = 110): Drawable {
+    fun createBreakIcon(context: Context, size: Int = 90): Drawable {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeCap = Paint.Cap.ROUND
         }
-        p.color = Color.rgb(185, 135, 80)
+        p.color = Color.rgb(215, 160, 95)
         p.strokeWidth = size * 0.10f
         c.drawLine(size * 0.25f, size * 0.75f, size * 0.70f, size * 0.30f, p)
 
@@ -193,23 +193,7 @@ object VectorIconFactory {
         return BitmapDrawable(context.resources, bmp)
     }
 
-    fun createPlaceIcon(context: Context, size: Int = 110): Drawable {
-        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
-        val c = Canvas(bmp)
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            style = Paint.Style.FILL
-            color = Color.WHITE
-        }
-        val r = RectF(size * 0.25f, size * 0.25f, size * 0.75f, size * 0.75f)
-        c.drawRoundRect(r, size * 0.08f, size * 0.08f, p)
-        p.color = Color.rgb(35, 140, 85)
-        p.style = Paint.Style.STROKE
-        p.strokeWidth = size * 0.06f
-        c.drawRoundRect(r, size * 0.08f, size * 0.08f, p)
-        return BitmapDrawable(context.resources, bmp)
-    }
-
-    fun createJumpIcon(context: Context, size: Int = 110): Drawable {
+    fun createJumpIcon(context: Context, size: Int = 90): Drawable {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
         val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -245,12 +229,9 @@ object Engine {
     external fun nativeSetBreaking(active: Boolean)
     external fun nativeTapPlaceAt(screenX: Float, screenY: Float)
     external fun nativeSetJumpState(holding: Boolean)
-    external fun nativeSetSneakState(holding: Boolean)
-    external fun nativeSetSprintState(active: Boolean)
     external fun nativeSelectSlot(slot: Int)
     external fun nativeSaveWorld()
     external fun nativeGetInventory(): String
-    external fun nativeSetInventorySlot(slot: Int, blockId: Int, count: Int)
     external fun nativeGetPlayerStats(): String
     external fun nativeSetRenderDistance(distance: Int)
     external fun nativeSetFov(fov: Float)
@@ -285,7 +266,7 @@ class Activity : AndroidActivity() {
     private lateinit var rootLayout: FrameLayout
     private var glView: GLSurfaceView? = null
 
-    // Bağımsız Multi-Touch Takip Havuzu
+    // Multi-Touch Pointer Takip
     private var joyPointerId = -1
     private var joyOriginX = 0f
     private var joyOriginY = 0f
@@ -303,8 +284,6 @@ class Activity : AndroidActivity() {
     private var fov = 70.0f
     private var renderDistance = 6
     private var dayNightEnabled = true
-    private var isSneaking = false
-    private var isSprinting = false
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private var statsUpdater: Runnable? = null
@@ -313,12 +292,6 @@ class Activity : AndroidActivity() {
     private val prefs by lazy { getSharedPreferences("omni_settings", Context.MODE_PRIVATE) }
 
     private fun dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
-    private fun uiScale(): Float {
-        val w = rootLayout.width.coerceAtLeast(1)
-        val h = rootLayout.height.coerceAtLeast(1)
-        return (minOf(w, h) / 900f).coerceIn(0.75f, 1.35f)
-    }
-    private fun ui(v: Float): Int = dp(v * uiScale())
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -367,58 +340,46 @@ class Activity : AndroidActivity() {
                     Color.rgb(4, 10, 22), Color.rgb(10, 36, 56), Color.rgb(24, 12, 42)
                 ))
             }
-            val glow = View(this).apply {
-                background = GradientDrawable().apply {
-                    shape = GradientDrawable.OVAL
-                    setColor(Color.argb(60, 45, 215, 255))
-                }
-                layoutParams = FrameLayout.LayoutParams(ui(560f), ui(560f)).apply {
-                    gravity = Gravity.TOP or Gravity.END
-                    topMargin = -ui(190f); rightMargin = -ui(160f)
-                }
-            }
-            lobby.addView(glow)
 
             val content = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = Gravity.CENTER
-                setPadding(ui(36f), ui(28f), ui(36f), ui(28f))
-                layoutParams = FrameLayout.LayoutParams(ui(660f), -2, Gravity.CENTER)
+                setPadding(dp(32f), dp(24f), dp(32f), dp(24f))
+                layoutParams = FrameLayout.LayoutParams(dp(440f), -2, Gravity.CENTER)
                 background = GradientDrawable().apply {
                     setColor(Color.argb(215, 8, 16, 28))
-                    cornerRadius = ui(32f).toFloat()
-                    setStroke(ui(1.5f), Color.argb(130, 130, 230, 255))
+                    cornerRadius = dp(24f).toFloat()
+                    setStroke(dp(1.5f), Color.argb(130, 130, 230, 255))
                 }
-                elevation = ui(20f).toFloat()
+                elevation = dp(16f).toFloat()
             }
 
             fun text(value: String, size: Float, color: Int) = TextView(this).apply {
-                text = value; textSize = size * uiScale(); setTextColor(color); gravity = Gravity.CENTER
+                text = value; textSize = size; setTextColor(color); gravity = Gravity.CENTER
             }
 
-            content.addView(text("OMNI CRAFT", 48f, Color.WHITE).apply {
+            content.addView(text("OMNI CRAFT", 34f, Color.WHITE).apply {
                 typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-                letterSpacing = 0.08f
-                setShadowLayer(ui(20f).toFloat(), 0f, ui(6f).toFloat(), Color.argb(230, 0, 0, 0))
+                letterSpacing = 0.06f
+                setShadowLayer(dp(12f).toFloat(), 0f, dp(4f).toFloat(), Color.argb(230, 0, 0, 0))
             })
-            content.addView(text("AAA SURVIVAL • INFINITE WORLDS", 12f, Color.rgb(100, 230, 255)).apply {
-                letterSpacing = 0.18f; setPadding(0, 0, 0, ui(8f))
+            content.addView(text("SURVIVAL • INFINITE WORLDS", 11f, Color.rgb(100, 230, 255)).apply {
+                letterSpacing = 0.14f; setPadding(0, 0, 0, dp(6f))
             })
-            content.addView(text("Keşfet  •  İnşa Et  •  Hayatta Kal  •  Geliş", 14f, Color.LTGRAY).apply {
-                setPadding(0, 0, 0, ui(24f))
+            content.addView(text("Keşfet  •  İnşa Et  •  Hayatta Kal", 13f, Color.LTGRAY).apply {
+                setPadding(0, 0, 0, dp(18f))
             })
 
             fun createLobbyBtn(label: String, primary: Boolean, onClick: () -> Unit) = Button(this).apply {
-                text = label; textSize = (if (primary) 18f else 15f) * uiScale()
+                text = label; textSize = if (primary) 16f else 14f
                 setTextColor(Color.WHITE); isAllCaps = false; stateListAnimator = null
                 background = GradientDrawable().apply {
                     setColor(if (primary) Color.rgb(24, 150, 188) else Color.argb(225, 28, 42, 56))
-                    cornerRadius = ui(if (primary) 22f else 18f).toFloat()
-                    setStroke(ui(if (primary) 2f else 1f), if (primary) Color.rgb(140, 248, 255) else Color.argb(130, 150, 190, 210))
+                    cornerRadius = dp(16f).toFloat()
+                    setStroke(dp(1.5f), if (primary) Color.rgb(140, 248, 255) else Color.argb(130, 150, 190, 210))
                 }
-                elevation = ui(if (primary) 10f else 6f).toFloat()
-                layoutParams = LinearLayout.LayoutParams(ui(520f), ui(if (primary) 92f else 72f)).apply {
-                    setMargins(0, ui(7f), 0, ui(7f))
+                layoutParams = LinearLayout.LayoutParams(dp(360f), dp(if (primary) 54f else 46f)).apply {
+                    setMargins(0, dp(5f), 0, dp(5f))
                 }
                 setOnClickListener { onClick() }
             }
@@ -426,9 +387,6 @@ class Activity : AndroidActivity() {
             content.addView(createLobbyBtn("▶   DÜNYAYA GİR", true) { startGame() })
             content.addView(createLobbyBtn("⚙   AYARLAR", false) { showSettingsDialog() })
             content.addView(createLobbyBtn("✕   ÇIKIŞ", false) { finish() })
-            content.addView(text("Rayleigh Sky  •  Living Oceans  •  Voxel AO  •  Smooth Kinematics", 10f, Color.argb(185, 205, 220, 230)).apply {
-                setPadding(0, ui(20f), 0, 0)
-            })
             lobby.addView(content)
             rootLayout.addView(lobby)
             applyFullScreen()
@@ -456,167 +414,131 @@ class Activity : AndroidActivity() {
             layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
 
-        // 1. Hassas Crosshair
+        // 1. Hassas Artı İşareti (Crosshair)
         val chV = View(this).apply {
-            background = GradientDrawable().apply { setColor(Color.argb(220, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(ui(3.5f), ui(30f)).apply { gravity = Gravity.CENTER }
+            background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
+            layoutParams = FrameLayout.LayoutParams(dp(2.5f), dp(20f)).apply { gravity = Gravity.CENTER }
         }
         val chH = View(this).apply {
-            background = GradientDrawable().apply { setColor(Color.argb(220, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(ui(30f), ui(3.5f)).apply { gravity = Gravity.CENTER }
+            background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
+            layoutParams = FrameLayout.LayoutParams(dp(20f), dp(2.5f)).apply { gravity = Gravity.CENTER }
         }
         hud.addView(chV)
         hud.addView(chH)
 
-        // 2. Üst Durum Çubuğu (FPS, XYZ, Can, Açlık, Pause)
+        // 2. Üst Durum Çubuğu (FPS, Koordinat, Pause Butonu)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(ui(24f), ui(16f), ui(24f), 0)
+            setPadding(dp(16f), dp(10f), dp(16f), 0)
             layoutParams = FrameLayout.LayoutParams(-1, -2, Gravity.TOP)
         }
 
         statsTextView = TextView(this).apply {
-            text = "XYZ: 0.0, 64.0, 0.0  •  60 FPS"
-            textSize = 12f * uiScale()
+            text = "XYZ: 0.0, 64.0, 0.0 • 60 FPS"
+            textSize = 11f
             setTextColor(Color.WHITE)
-            setShadowLayer(4f, 1f, 1f, Color.BLACK)
+            setShadowLayer(3f, 1f, 1f, Color.BLACK)
             layoutParams = LinearLayout.LayoutParams(0, -2, 1.0f)
         }
         topBar.addView(statsTextView)
 
         val pauseBtn = Button(this).apply {
             text = "❚❚"
-            textSize = 14f * uiScale()
+            textSize = 12f
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 setColor(Color.argb(160, 30, 38, 48))
-                cornerRadius = ui(12f).toFloat()
-                setStroke(ui(1f), Color.argb(180, 200, 220, 240))
+                cornerRadius = dp(8f).toFloat()
+                setStroke(dp(1f), Color.argb(180, 200, 220, 240))
             }
-            layoutParams = LinearLayout.LayoutParams(ui(56f), ui(56f))
+            layoutParams = LinearLayout.LayoutParams(dp(38f), dp(38f))
             setOnClickListener { showPauseMenu() }
         }
         topBar.addView(pauseBtn)
         hud.addView(topBar)
 
-        // 3. Dinamik Yüzen Joystick Tabanı ve Tutamaç
+        // 3. Kompakt Joystick Tabanı ve Tutamaç
         joyBaseView = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.argb(85, 25, 35, 45))
-                setStroke(ui(2f), Color.argb(160, 100, 200, 240))
+                setColor(Color.argb(70, 25, 35, 45))
+                setStroke(dp(1.5f), Color.argb(140, 100, 200, 240))
             }
-            layoutParams = FrameLayout.LayoutParams(ui(180f), ui(180f)).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(110f), dp(110f)).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
-                setMargins(ui(48f), 0, 0, ui(48f))
+                setMargins(dp(24f), 0, 0, dp(24f))
             }
         }
         joyKnobView = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.argb(210, 45, 185, 235))
-                setStroke(ui(2f), Color.WHITE)
+                setColor(Color.argb(200, 45, 185, 235))
+                setStroke(dp(1.5f), Color.WHITE)
             }
-            layoutParams = FrameLayout.LayoutParams(ui(72f), ui(72f)).apply {
+            layoutParams = FrameLayout.LayoutParams(dp(44f), dp(44f)).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
-                setMargins(ui(102f), 0, 0, ui(102f))
+                setMargins(dp(57f), 0, 0, dp(57f))
             }
         }
         hud.addView(joyBaseView)
         hud.addView(joyKnobView)
 
-        // 4. Sağ Eylem Butonları (KIR, KOY, ZIPLA, EĞİL, KOŞ) - Bağımsız Çoklu Dokunma
-        val rightActions = LinearLayout(this).apply {
+        // 4. Sağ Aksiyon Butonları (KIR ve ZIPLA) - Çakışmasız ve Kompakt
+        val rightActionArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-                setMargins(0, 0, ui(36f), ui(36f))
+                setMargins(0, 0, dp(24f), dp(24f))
             }
         }
 
-        val row1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-        val row2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-
-        fun makeActionButton(icon: Drawable?, bgCol: Int, sizeDp: Float = 84f, onTouch: (Boolean) -> Unit) = ImageButton(this).apply {
-            if (icon != null) setImageDrawable(icon)
+        val breakBtn = ImageButton(this).apply {
+            setImageDrawable(VectorIconFactory.createBreakIcon(this@Activity, dp(54f)))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(bgCol)
-                setStroke(ui(1.5f), Color.WHITE)
+                setColor(Color.argb(175, 195, 45, 45))
+                setStroke(dp(1.5f), Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(ui(sizeDp), ui(sizeDp)).apply { setMargins(ui(6f), ui(6f), ui(6f), ui(6f)) }
+            layoutParams = LinearLayout.LayoutParams(dp(54f), dp(54f)).apply { setMargins(0, 0, 0, dp(12f)) }
             setOnTouchListener { _, event ->
                 when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { onTouch(true); true }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { onTouch(false); true }
+                    MotionEvent.ACTION_DOWN -> { Engine.nativeSetBreaking(true); true }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { Engine.nativeSetBreaking(false); true }
                     else -> false
                 }
             }
         }
 
-        val breakBtn = makeActionButton(VectorIconFactory.createBreakIcon(this), Color.argb(175, 195, 45, 45)) { active ->
-            Engine.nativeSetBreaking(active)
-        }
-        val placeBtn = makeActionButton(VectorIconFactory.createPlaceIcon(this), Color.argb(175, 35, 160, 85)) { active ->
-            if (active) Engine.nativeTapPlaceAt(rootLayout.width * 0.5f, rootLayout.height * 0.5f)
-        }
-        val jumpBtn = makeActionButton(VectorIconFactory.createJumpIcon(this), Color.argb(175, 35, 105, 185)) { active ->
-            Engine.nativeSetJumpState(active)
-        }
-
-        val sprintToggleBtn = Button(this).apply {
-            text = "KOŞ"
-            textSize = 12f * uiScale()
-            setTextColor(Color.WHITE)
+        val jumpBtn = ImageButton(this).apply {
+            setImageDrawable(VectorIconFactory.createJumpIcon(this@Activity, dp(60f)))
+            scaleType = ImageView.ScaleType.CENTER_INSIDE
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
-                setColor(Color.argb(160, 50, 60, 75))
-                setStroke(ui(1f), Color.WHITE)
+                setColor(Color.argb(175, 35, 105, 185))
+                setStroke(dp(1.5f), Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(ui(64f), ui(64f)).apply { setMargins(ui(6f), ui(6f), ui(6f), ui(6f)) }
-            setOnClickListener {
-                isSprinting = !isSprinting
-                Engine.nativeSetSprintState(isSprinting)
-                (background as GradientDrawable).setColor(if (isSprinting) Color.rgb(220, 140, 20) else Color.argb(160, 50, 60, 75))
-            }
-        }
-
-        val sneakToggleBtn = Button(this).apply {
-            text = "EĞİL"
-            textSize = 12f * uiScale()
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.argb(160, 50, 60, 75))
-                setStroke(ui(1f), Color.WHITE)
-            }
-            layoutParams = LinearLayout.LayoutParams(ui(64f), ui(64f)).apply { setMargins(ui(6f), ui(6f), ui(6f), ui(6f)) }
-            setOnClickListener {
-                isSneaking = !isSneaking
-                Engine.nativeSetSneakState(isSneaking)
-                (background as GradientDrawable).setColor(if (isSneaking) Color.rgb(180, 50, 180) else Color.argb(160, 50, 60, 75))
+            layoutParams = LinearLayout.LayoutParams(dp(60f), dp(60f))
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> { Engine.nativeSetJumpState(true); true }
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { Engine.nativeSetJumpState(false); true }
+                    else -> false
+                }
             }
         }
 
-        row1.addView(sprintToggleBtn)
-        row1.addView(breakBtn)
-        row1.addView(placeBtn)
+        rightActionArea.addView(breakBtn)
+        rightActionArea.addView(jumpBtn)
+        hud.addView(rightActionArea)
 
-        row2.addView(sneakToggleBtn)
-        row2.addView(jumpBtn)
-
-        rightActions.addView(row1)
-        rightActions.addView(row2)
-        hud.addView(rightActions)
-
-        // 5. 9'lu Glassmorphism Hotbar
+        // 5. MCPE Standart 9'lu Kompakt Hotbar
         val hotbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL).apply {
-                bottomMargin = ui(16f)
+                bottomMargin = dp(8f)
             }
         }
 
@@ -624,10 +546,10 @@ class Activity : AndroidActivity() {
             orientation = LinearLayout.HORIZONTAL
             background = GradientDrawable().apply {
                 setColor(Color.argb(185, 18, 26, 38))
-                cornerRadius = ui(14f).toFloat()
-                setStroke(ui(1.5f), Color.argb(150, 120, 200, 240))
+                cornerRadius = dp(8f).toFloat()
+                setStroke(dp(1f), Color.argb(140, 120, 200, 240))
             }
-            setPadding(ui(4f), ui(4f), ui(4f), ui(4f))
+            setPadding(dp(2f), dp(2f), dp(2f), dp(2f))
         }
 
         val initialBlockIds = intArrayOf(9, 4, 19, 32, 36, 1, 2, 7, 44)
@@ -636,26 +558,26 @@ class Activity : AndroidActivity() {
             val slotContainer = FrameLayout(this).apply {
                 background = GradientDrawable().apply {
                     setColor(if (i == 0) Color.argb(190, 80, 140, 180) else Color.argb(70, 0, 0, 0))
-                    cornerRadius = ui(10f).toFloat()
-                    setStroke(if (i == 0) ui(2.5f) else ui(1f), if (i == 0) Color.WHITE else Color.GRAY)
+                    cornerRadius = dp(6f).toFloat()
+                    setStroke(if (i == 0) dp(2f) else dp(1f), if (i == 0) Color.WHITE else Color.GRAY)
                 }
-                layoutParams = LinearLayout.LayoutParams(ui(68f), ui(68f)).apply { setMargins(ui(2.5f), ui(2.5f), ui(2.5f), ui(2.5f)) }
+                layoutParams = LinearLayout.LayoutParams(dp(38f), dp(38f)).apply { setMargins(dp(1.5f), dp(1.5f), dp(1.5f), dp(1.5f)) }
             }
 
             val blockIcon = ImageView(this).apply {
-                setImageDrawable(BlockIconFactory.getIcon(this@Activity, initialBlockIds[i]))
+                setImageDrawable(BlockIconFactory.getIcon(this@Activity, initialBlockIds[i], dp(32f)))
                 scaleType = ImageView.ScaleType.FIT_CENTER
-                layoutParams = FrameLayout.LayoutParams(ui(54f), ui(54f)).apply { gravity = Gravity.CENTER }
+                layoutParams = FrameLayout.LayoutParams(dp(28f), dp(28f)).apply { gravity = Gravity.CENTER }
             }
             slotContainer.addView(blockIcon)
 
             val countText = TextView(this).apply {
                 text = if (i == 3) "16" else "64"
-                textSize = 10f * uiScale()
+                textSize = 8.5f
                 setTextColor(Color.WHITE)
-                setShadowLayer(3f, 1f, 1f, Color.BLACK)
+                setShadowLayer(2f, 1f, 1f, Color.BLACK)
                 layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-                    setMargins(0, 0, ui(6f), ui(2f))
+                    setMargins(0, 0, dp(3f), dp(1f))
                 }
             }
             slotContainer.addView(countText)
@@ -666,7 +588,7 @@ class Activity : AndroidActivity() {
                     for (j in 0 until hotbarSlots.childCount) {
                         (hotbarSlots.getChildAt(j).background as GradientDrawable).apply {
                             setColor(if (j == i) Color.argb(190, 80, 140, 180) else Color.argb(70, 0, 0, 0))
-                            setStroke(if (j == i) ui(2.5f) else ui(1f), if (j == i) Color.WHITE else Color.GRAY)
+                            setStroke(if (j == i) dp(2f) else dp(1f), if (j == i) Color.WHITE else Color.GRAY)
                         }
                     }
                 }
@@ -679,20 +601,20 @@ class Activity : AndroidActivity() {
 
         val invBtn = Button(this).apply {
             text = "•••"
-            textSize = 16f * uiScale()
+            textSize = 11f
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 setColor(Color.argb(185, 28, 40, 56))
-                cornerRadius = ui(14f).toFloat()
-                setStroke(ui(1.5f), Color.WHITE)
+                cornerRadius = dp(8f).toFloat()
+                setStroke(dp(1f), Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(ui(68f), ui(68f)).apply { marginStart = ui(10f) }
+            layoutParams = LinearLayout.LayoutParams(dp(38f), dp(38f)).apply { marginStart = dp(6f) }
             setOnClickListener { showInventoryDialog() }
         }
         hotbarContainer.addView(invBtn)
         hud.addView(hotbarContainer)
 
-        // 6. Eşzamanlı Çoklu Dokunmatik Katman (Multi-Touch Camera & Virtual Joystick)
+        // 6. Eşzamanlı Çoklu Dokunmatik (Multi-Touch) & Ekrana Dokunarak Blok Koyma
         hud.setOnTouchListener { _, event ->
             val pIdx = event.actionIndex
             val pId = event.getPointerId(pIdx)
@@ -701,7 +623,7 @@ class Activity : AndroidActivity() {
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (px < root.width * 0.40f && joyPointerId == -1) {
+                    if (px < root.width * 0.38f && joyPointerId == -1) {
                         joyPointerId = pId
                         joyOriginX = joyBaseView?.let { it.x + it.width / 2f } ?: px
                         joyOriginY = joyBaseView?.let { it.y + it.height / 2f } ?: py
@@ -741,7 +663,8 @@ class Activity : AndroidActivity() {
                     if (pId == camPointerId) {
                         val duration = System.currentTimeMillis() - touchDownTime
                         val distMoved = Math.hypot((lastCamX - touchDownX).toDouble(), (lastCamY - touchDownY).toDouble())
-                        if (duration < 240 && distMoved < 25.0) {
+                        // Ekrana kısa dokunulduğunda o noktadaki bloğun üzerine blok koy
+                        if (duration < 240 && distMoved < 20.0) {
                             Engine.nativeTapPlaceAt(lastCamX, lastCamY)
                         }
                         camPointerId = -1
@@ -789,7 +712,7 @@ class Activity : AndroidActivity() {
     private fun handleJoystick(touchX: Float, touchY: Float) {
         var dx = touchX - joyOriginX
         var dy = touchY - joyOriginY
-        val maxRadius = ui(75f).toFloat()
+        val maxRadius = dp(45f).toFloat()
         val dist = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
 
         if (dist > maxRadius) {
@@ -818,11 +741,11 @@ class Activity : AndroidActivity() {
         }
 
         val title = TextView(this).apply {
-            text = "ENVANTER VE ÜRETİM"
-            textSize = 20f * uiScale()
+            text = "ENVANTER"
+            textSize = 18f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, ui(16f), 0, ui(16f))
+            setPadding(0, dp(14f), 0, dp(14f))
         }
         layout.addView(title)
 
@@ -841,31 +764,31 @@ class Activity : AndroidActivity() {
                 val slotContainer = FrameLayout(this).apply {
                     background = GradientDrawable().apply {
                         setColor(Color.argb(130, 40, 52, 70))
-                        setStroke(ui(1.5f), Color.argb(150, 160, 200, 230))
-                        cornerRadius = ui(8f).toFloat()
+                        setStroke(dp(1.5f), Color.argb(150, 160, 200, 230))
+                        cornerRadius = dp(6f).toFloat()
                     }
                     layoutParams = GridLayout.LayoutParams().apply {
-                        width = ui(80f)
-                        height = ui(80f)
-                        setMargins(ui(3.5f), ui(3.5f), ui(3.5f), ui(3.5f))
+                        width = dp(46f)
+                        height = dp(46f)
+                        setMargins(dp(2.5f), dp(2.5f), dp(2.5f), dp(2.5f))
                     }
                 }
 
                 if (count > 0 && id > 0) {
                     val icon = ImageView(this).apply {
-                        setImageDrawable(BlockIconFactory.getIcon(this@Activity, id))
+                        setImageDrawable(BlockIconFactory.getIcon(this@Activity, id, dp(36f)))
                         scaleType = ImageView.ScaleType.FIT_CENTER
-                        layoutParams = FrameLayout.LayoutParams(ui(60f), ui(60f)).apply { gravity = Gravity.CENTER }
+                        layoutParams = FrameLayout.LayoutParams(dp(34f), dp(34f)).apply { gravity = Gravity.CENTER }
                     }
                     slotContainer.addView(icon)
 
                     val countText = TextView(this).apply {
                         text = "$count"
-                        textSize = 11f * uiScale()
+                        textSize = 9f
                         setTextColor(Color.WHITE)
-                        setShadowLayer(3f, 1f, 1f, Color.BLACK)
+                        setShadowLayer(2f, 1f, 1f, Color.BLACK)
                         layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-                            setMargins(0, 0, ui(6f), ui(2f))
+                            setMargins(0, 0, dp(4f), dp(1f))
                         }
                     }
                     slotContainer.addView(countText)
@@ -879,14 +802,14 @@ class Activity : AndroidActivity() {
 
         val closeBtn = Button(this).apply {
             text = "Kapat"
-            textSize = 14f * uiScale()
+            textSize = 13f
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 setColor(Color.argb(210, 50, 70, 95))
-                cornerRadius = ui(12f).toFloat()
-                setStroke(ui(1.5f), Color.WHITE)
+                cornerRadius = dp(10f).toFloat()
+                setStroke(dp(1f), Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(ui(220f), ui(72f)).apply { topMargin = ui(24f) }
+            layoutParams = LinearLayout.LayoutParams(dp(160f), dp(48f)).apply { topMargin = dp(18f) }
             setOnClickListener { dialog.dismiss(); applyFullScreen() }
         }
         layout.addView(closeBtn)
@@ -901,11 +824,11 @@ class Activity : AndroidActivity() {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
             setBackgroundColor(Color.rgb(16, 24, 36))
-            setPadding(ui(40f), ui(28f), ui(40f), ui(28f))
+            setPadding(dp(32f), dp(20f), dp(32f), dp(20f))
         }
 
-        fun label(t: String) = TextView(this).apply { text = t; textSize = 15f * uiScale(); setTextColor(Color.WHITE); setPadding(0, ui(8f), 0, ui(4f)) }
-        layout.addView(label("AYARLAR").apply { textSize = 24f * uiScale(); typeface = Typeface.DEFAULT_BOLD })
+        fun label(t: String) = TextView(this).apply { text = t; textSize = 14f; setTextColor(Color.WHITE); setPadding(0, dp(6f), 0, dp(3f)) }
+        layout.addView(label("AYARLAR").apply { textSize = 20f; typeface = Typeface.DEFAULT_BOLD })
 
         val sl = label("Kamera Hassasiyeti: ${(sensitivity * 100).toInt()}%")
         layout.addView(sl)
@@ -956,7 +879,7 @@ class Activity : AndroidActivity() {
 
         layout.addView(Switch(this).apply {
             text = "Dinamik Gündüz / Gece Döngüsü"
-            textSize = 15f * uiScale()
+            textSize = 14f
             setTextColor(Color.WHITE)
             isChecked = dayNightEnabled
             setOnCheckedChangeListener { _, v ->
@@ -967,13 +890,13 @@ class Activity : AndroidActivity() {
 
         layout.addView(Button(this).apply {
             text = "Kaydet ve Geri Dön"
-            textSize = 15f * uiScale()
+            textSize = 14f
             setTextColor(Color.WHITE)
             background = GradientDrawable().apply {
                 setColor(Color.rgb(24, 140, 180))
-                cornerRadius = ui(14f).toFloat()
+                cornerRadius = dp(12f).toFloat()
             }
-            layoutParams = LinearLayout.LayoutParams(ui(380f), ui(88f)).apply { topMargin = ui(24f) }
+            layoutParams = LinearLayout.LayoutParams(dp(260f), dp(50f)).apply { topMargin = dp(18f) }
             setOnClickListener {
                 prefs.edit().putFloat("sensitivity", sensitivity).putFloat("fov", fov).putInt("renderDistance", renderDistance).putBoolean("dayNight", dayNightEnabled).apply()
                 if (Engine.nativeIsInitialized()) {
@@ -1001,24 +924,24 @@ class Activity : AndroidActivity() {
 
         val title = TextView(this).apply {
             text = "OYUN DURAKLATILDI"
-            textSize = 22f * uiScale()
+            textSize = 19f
             setTextColor(Color.WHITE)
             typeface = Typeface.DEFAULT_BOLD
-            setPadding(0, 0, 0, ui(28f))
+            setPadding(0, 0, 0, dp(20f))
         }
         layout.addView(title)
 
         fun createMenuBtn(txt: String, onClick: () -> Unit): Button {
             return Button(this).apply {
                 text = txt
-                textSize = 15f * uiScale()
+                textSize = 14f
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
-                    cornerRadius = ui(14f).toFloat()
+                    cornerRadius = dp(12f).toFloat()
                     setColor(Color.argb(210, 40, 56, 75))
-                    setStroke(ui(1.5f), Color.WHITE)
+                    setStroke(dp(1.5f), Color.WHITE)
                 }
-                layoutParams = LinearLayout.LayoutParams(ui(340f), ui(80f)).apply { setMargins(0, ui(8f), 0, ui(8f)) }
+                layoutParams = LinearLayout.LayoutParams(dp(240f), dp(48f)).apply { setMargins(0, dp(6f), 0, dp(6f)) }
                 setOnClickListener { onClick() }
             }
         }

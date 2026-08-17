@@ -32,10 +32,8 @@ static constexpr int RD         = 8;
 static constexpr int SEA_LEVEL  = 32;
 static constexpr float GRAVITY  = -26.0f;
 static constexpr float JUMP_VEL = 8.8f;
-static constexpr float SWIM_VEL = 4.8f;
-static constexpr float WALK_SPD = 4.317f;
-static constexpr float SPRINT_SPD = 6.45f;
-static constexpr float SNEAK_SPD  = 1.85f;
+static constexpr float SWIM_VEL = 5.0f;
+static constexpr float WALK_SPD = 4.35f;
 static constexpr float REACH    = 5.5f;
 static constexpr int INV_SIZE   = 36;
 static constexpr int HOTBAR_SZ  = 9;
@@ -55,7 +53,7 @@ enum BlockID : uint8_t {
 enum ItemID : uint16_t {
     ITEM_NONE=0, ITEM_STICK=256, ITEM_RAW_PORK, ITEM_COOKED_PORK,
     ITEM_RAW_BEEF, ITEM_COOKED_BEEF, ITEM_RAW_MUTTON, ITEM_WOOL,
-    ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_SWORD, ITEM_PICKAXE
+    ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND
 };
 
 enum EntityType : uint8_t {
@@ -115,7 +113,6 @@ struct Vertex {
     float u, v;
     float light;
     float ao;
-    float tileId;
 };
 
 struct Particle {
@@ -147,8 +144,8 @@ struct Entity {
     EntityType type;
     Vec3 pos{}, vel{};
     float yaw = 0.0f, pitch = 0.0f;
+    float headYaw = 0.0f;
     float health = 10.0f;
-    float maxHealth = 10.0f;
     float animTime = 0.0f;
     float walkSpeed = 0.0f;
     uint16_t itemId = 0;
@@ -221,8 +218,6 @@ struct Player {
     Vec3 pos{0.5f, 60.0f, 0.5f}, vel{};
     float yaw = 0.0f, pitch = 0.0f;
     float eyeH = 1.62f;
-    float health = 20.0f;
-    float hunger = 20.0f;
     float worldTime = 6000.0f;
     float fov = 70.0f;
     int renderDistance = 6;
@@ -230,8 +225,6 @@ struct Player {
     bool onGround = false;
     bool inWater = false;
     bool jumpHolding = false;
-    bool sneaking = false;
-    bool sprinting = false;
     Inventory inv;
 
     bool isBreaking = false;
@@ -251,18 +244,20 @@ public:
     GLuint waterProg = 0;
     GLuint entityProg = 0;
     GLuint skyProg = 0;
-    GLuint handProg = 0;
+    GLuint crackProg = 0;
     GLuint atlasTex = 0;
+    GLuint crackTex = 0;
     GLuint boxVAO = 0, boxVBO = 0;
     int screenW = 1920, screenH = 1080;
 
     void init(int w, int h);
     void resize(int w, int h);
     void frame(World& world, Player& player, float time);
-    void generateProceduralAtlas();
+    void generateTextures();
     void drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw = 0, float pitch = 0, float roll = 0);
-    void drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, float time);
+    void drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw = 0);
     void drawBreakingOverlay(const Mat4& vp, Vec3i pos, float progress);
+    void drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, float time);
     void drawMob(const Mat4& vp, const Entity& e, float daylight);
     void drawFirstPersonHand(const Mat4& proj, const Player& player, float time);
 };
