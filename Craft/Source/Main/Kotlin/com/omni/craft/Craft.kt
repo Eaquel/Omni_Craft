@@ -40,7 +40,7 @@ object CraftLogger {
         Thread.setDefaultUncaughtExceptionHandler { _, throwable ->
             val sw = StringWriter()
             throwable.printStackTrace(PrintWriter(sw))
-            Log.e(TAG, "Fatal Crash: $sw")
+            Log.e(TAG, "Kritik Hata: $sw")
         }
     }
 
@@ -224,7 +224,7 @@ object Engine {
     external fun nativeInput(x: Float, z: Float)
     external fun nativeCameraInput(dx: Float, dy: Float)
     external fun nativeSetBreaking(active: Boolean)
-    external fun nativeTapPlace()
+    external fun nativeTapPlaceAt(screenX: Float, screenY: Float)
     external fun nativeSetJumpState(holding: Boolean)
     external fun nativeSelectSlot(slot: Int)
     external fun nativeSaveWorld()
@@ -266,9 +266,10 @@ class Activity : AndroidActivity() {
     private var camPointerId = -1
     private var lastCamX = 0f
     private var lastCamY = 0f
+    private var touchDownX = 0f
+    private var touchDownY = 0f
     private var touchDownTime = 0L
 
-    // Ayarlar Değerleri
     private var sensitivity = 1.0f
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -554,7 +555,7 @@ class Activity : AndroidActivity() {
         }
         hud.addView(pauseBtn)
 
-        // Çoklu Dokunmatik & Ekrana Tıklayarak Blok Koyma
+        // Çoklu Dokunmatik & Ekrana Dokunarak Blok Yerleştirme
         hud.setOnTouchListener { _, event ->
             val pointerIndex = event.actionIndex
             val pId = event.getPointerId(pointerIndex)
@@ -572,6 +573,8 @@ class Activity : AndroidActivity() {
                         camPointerId = pId
                         lastCamX = x
                         lastCamY = y
+                        touchDownX = x
+                        touchDownY = y
                         touchDownTime = System.currentTimeMillis()
                     }
                 }
@@ -586,7 +589,7 @@ class Activity : AndroidActivity() {
                         } else if (currentId == camPointerId) {
                             val dx = (px - lastCamX) * 0.22f * sensitivity
                             val dy = (py - lastCamY) * 0.22f * sensitivity
-                            Engine.nativeCameraInput(dx, -dy)
+                            Engine.nativeCameraInput(dx, dy)
                             lastCamX = px
                             lastCamY = py
                         }
@@ -598,9 +601,11 @@ class Activity : AndroidActivity() {
                         Engine.nativeInput(0f, 0f)
                     }
                     if (pId == camPointerId) {
-                        // Kısa dokunuş ile doğrudan blok yerleştirme
-                        if (System.currentTimeMillis() - touchDownTime < 220) {
-                            Engine.nativeTapPlace()
+                        val touchDuration = System.currentTimeMillis() - touchDownTime
+                        val distMoved = Math.hypot((lastCamX - touchDownX).toDouble(), (lastCamY - touchDownY).toDouble())
+                        // Ekrandaki bloğa kısa dokunulduğunda o noktaya blok yerleştir
+                        if (touchDuration < 260 && distMoved < 35.0) {
+                            Engine.nativeTapPlaceAt(lastCamX, lastCamY)
                         }
                         camPointerId = -1
                     }

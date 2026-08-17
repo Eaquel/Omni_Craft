@@ -119,6 +119,22 @@ static inline float getTerrainHeight(float x, float z) {
                    smoothNoise(x * 0.05f,  z * 0.05f)  * 8.0f;
 }
 
+static Vec3 getRayDirection(const Player& player, float screenX, float screenY, int screenW, int screenH) {
+    float aspect = static_cast<float>(screenW) / static_cast<float>(screenH);
+    float fovRad = 1.222f;
+    float halfFovTan = tanf(fovRad * 0.5f);
+
+    float ndcX = (2.0f * screenX / static_cast<float>(screenW)) - 1.0f;
+    float ndcY = 1.0f - (2.0f * screenY / static_cast<float>(screenH));
+
+    Vec3 fwd = player.lookDir().norm();
+    Vec3 upWorld = {0.0f, 1.0f, 0.0f};
+    Vec3 right = fwd.cross(upWorld).norm();
+    Vec3 up = right.cross(fwd).norm();
+
+    return (fwd + right * (ndcX * aspect * halfFovTan) + up * (ndcY * halfFovTan)).norm();
+}
+
 static Mat4 matPerspective(float fovRad, float aspect, float nearZ, float farZ) {
     Mat4 res;
     float f = 1.0f / tanf(fovRad * 0.5f);
@@ -1040,7 +1056,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.time += sdt;
     gs.autoSaveTimer += sdt;
 
-    // Otomatik Kayıt (Her 60 saniyede bir)
     if (gs.autoSaveTimer >= 60.0f) {
         if (gs.world) gs.world->saveWorld(gs.saveDirectory);
         gs.autoSaveTimer = 0.0f;
@@ -1065,15 +1080,19 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.vel.x = moveDir.x;
     gs.player.vel.z = moveDir.z;
 
-    // Su / Yerçekimi Hareketi
+    // Kesintisiz Zıplama & Yüzme
     if (gs.player.inWater) {
         if (gs.player.jumpHolding) {
-            gs.player.vel.y = SWIM_VEL; // Suda basılı tutarak yukarı yüzme
+            gs.player.vel.y = SWIM_VEL;
         } else {
             gs.player.vel.y += GRAVITY * sdt * 0.2f;
             gs.player.vel.y *= 0.85f;
         }
     } else {
+        if (gs.player.jumpHolding && gs.player.onGround) {
+            gs.player.vel.y = JUMP_VEL;
+            gs.player.onGround = false;
+        }
         gs.player.vel.y += GRAVITY * sdt;
     }
 
@@ -1103,7 +1122,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
-    // Blok Kırma İşlemi
     if (gs.player.isBreaking) {
         auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, gs.player.lookDir(), REACH);
         if (hit.hit) {
@@ -1172,15 +1190,17 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetBreaking(JNIEnv*, jcl
     }
 }
 
-JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlace(JNIEnv*, jclass) {
+// Dokunulan Noktadan 3D Işınla Blok Koyma
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jclass, jfloat screenX, jfloat screenY) {
     if (!gState) return;
-    auto hit = gState->world->raycast(gState->player.pos + Vec3{0, 1.62f, 0}, gState->player.lookDir(), REACH);
+    Vec3 rayDir = getRayDirection(gState->player, screenX, screenY, gState->screenW, gState->screenH);
+    auto hit = gState->world->raycast(gState->player.pos + Vec3{0, gState->player.eyeH, 0}, rayDir, REACH);
     if (hit.hit) {
         ItemStack& held = gState->player.inv.active();
         if (!held.empty() && held.id < BLOCK_COUNT) {
             Vec3i target = {hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z};
             Vec3 bCenter = {(float)target.x + 0.5f, (float)target.y + 0.5f, (float)target.z + 0.5f};
-            if ((bCenter - (gState->player.pos + Vec3{0, 0.9f, 0})).len() > 0.8f) {
+            if ((bCenter - (gState->player.pos + Vec3{0, 0.9f, 0})).len() > 0.75f) {
                 gState->world->setBlock(target.x, target.y, target.z, (uint8_t)held.id);
                 held.count--;
                 if (held.count == 0) held = ItemStack();
