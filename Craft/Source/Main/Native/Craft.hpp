@@ -146,8 +146,10 @@ struct Entity {
     float yaw = 0.0f, pitch = 0.0f;
     float headYaw = 0.0f;
     float health = 10.0f;
+    float maxHealth = 10.0f;
     float animTime = 0.0f;
     float walkSpeed = 0.0f;
+    float hurtTimer = 0.0f;
     uint16_t itemId = 0;
     bool alive = true;
 };
@@ -212,6 +214,7 @@ public:
 
     struct RayHit { bool hit; Vec3i block, face; float dist; };
     RayHit raycast(Vec3 origin, Vec3 dir, float maxD) const;
+    Entity* hitEntity(Vec3 origin, Vec3 dir, float maxD);
 };
 
 struct Player {
@@ -228,6 +231,8 @@ struct Player {
     bool onGround = false;
     bool inWater = false;
     bool jumpHolding = false;
+    float coyoteTimer = 0.0f;
+    float attackCooldown = 0.0f;
     Inventory inv;
 
     bool isBreaking = false;
@@ -252,7 +257,6 @@ public:
     GLuint atlasTex = 0;
     GLuint crackTex = 0;
     GLuint boxVAO = 0, boxVBO = 0;
-    GLuint unitCubeVAO = 0, unitCubeVBO = 0;
     int screenW = 1920, screenH = 1080;
 
     void init(int w, int h);
@@ -265,7 +269,6 @@ public:
     void drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, float time);
     void drawMob(const Mat4& vp, const Entity& e, float daylight);
     void drawFirstPersonHandAndItem(const Mat4& proj, const Player& player, float time);
-    void drawCharacterModel(const Mat4& vp, Vec3 pos, float yaw, float pitch, float animTime, float walkSpeed, uint8_t heldBlockId, float swingProgress);
 };
 
 struct GameState {

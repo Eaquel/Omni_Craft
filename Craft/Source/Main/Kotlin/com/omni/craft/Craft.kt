@@ -83,52 +83,52 @@ object BlockIconFactory {
         val sideRCol: Int
 
         when (blockId) {
-            1 -> { // Çimen (Grass)
+            1 -> { // Grass
                 topCol = Color.rgb(85, 185, 50)
                 sideLCol = Color.rgb(100, 70, 45)
                 sideRCol = Color.rgb(125, 85, 55)
             }
-            2 -> { // Toprak (Dirt)
+            2 -> { // Dirt
                 topCol = Color.rgb(125, 85, 55)
                 sideLCol = Color.rgb(95, 65, 40)
                 sideRCol = Color.rgb(135, 95, 60)
             }
-            3 -> { // Taş (Stone)
+            3 -> { // Stone
                 topCol = Color.rgb(155, 155, 158)
                 sideLCol = Color.rgb(120, 120, 122)
                 sideRCol = Color.rgb(175, 175, 178)
             }
-            4 -> { // Kırıktaş (Cobble)
+            4 -> { // Cobble
                 topCol = Color.rgb(130, 130, 130)
                 sideLCol = Color.rgb(100, 100, 100)
                 sideRCol = Color.rgb(145, 145, 145)
             }
-            5 -> { // Kum (Sand)
+            5 -> { // Sand
                 topCol = Color.rgb(235, 222, 160)
                 sideLCol = Color.rgb(200, 188, 130)
                 sideRCol = Color.rgb(248, 238, 178)
             }
-            7, 10, 13 -> { // Meşe / Huş / Çam Kütük (Logs)
+            7, 10, 13 -> { // Logs
                 topCol = Color.rgb(168, 132, 85)
                 sideLCol = Color.rgb(98, 72, 45)
                 sideRCol = Color.rgb(122, 92, 60)
             }
-            9, 11, 14 -> { // Tahta (Planks)
+            9, 11, 14 -> { // Planks
                 topCol = Color.rgb(182, 138, 82)
                 sideLCol = Color.rgb(148, 108, 62)
                 sideRCol = Color.rgb(202, 152, 92)
             }
-            19 -> { // Elmas Cevheri (Diamond Ore)
+            19 -> { // Diamond Ore
                 topCol = Color.rgb(145, 145, 148)
                 sideLCol = Color.rgb(45, 230, 230)
                 sideRCol = Color.rgb(170, 170, 175)
             }
-            32 -> { // Üretim Masası (Crafting Table)
+            32 -> { // Crafting Table
                 topCol = Color.rgb(188, 142, 86)
                 sideLCol = Color.rgb(152, 112, 66)
                 sideRCol = Color.rgb(138, 98, 56)
             }
-            36 -> { // Meşale (Torch)
+            36 -> { // Torch
                 topCol = Color.rgb(255, 225, 55)
                 sideLCol = Color.rgb(135, 92, 50)
                 sideRCol = Color.rgb(165, 118, 65)
@@ -136,6 +136,16 @@ object BlockIconFactory {
             44 -> { // TNT
                 topCol = Color.rgb(225, 50, 50)
                 sideLCol = Color.rgb(180, 40, 40)
+                sideRCol = Color.WHITE
+            }
+            258, 260, 262 -> { // Etler (Meat Drops)
+                topCol = Color.rgb(185, 55, 55)
+                sideLCol = Color.rgb(150, 35, 35)
+                sideRCol = Color.rgb(220, 80, 80)
+            }
+            263 -> { // Yün (Wool)
+                topCol = Color.rgb(230, 230, 230)
+                sideLCol = Color.rgb(190, 190, 190)
                 sideRCol = Color.WHITE
             }
             else -> {
@@ -183,6 +193,61 @@ object BlockIconFactory {
         c.drawPath(rightPath, p)
 
         iconCache[blockId] = bmp
+        return BitmapDrawable(context.resources, bmp)
+    }
+}
+
+object MinecraftIconFactory {
+    fun createHeart(context: Context, state: Int, size: Int = 30): Drawable { // 0: Empty, 1: Half, 2: Full
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        // Arka Plan Çerçeve
+        p.color = Color.rgb(35, 10, 10)
+        p.style = Paint.Style.FILL
+        c.drawRoundRect(RectF(1f, 1f, size - 1f, size - 1f), 3f, 3f, p)
+
+        if (state == 2) {
+            p.color = Color.rgb(235, 30, 30)
+            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+            p.color = Color.rgb(255, 140, 140)
+            c.drawRect(RectF(4f, 4f, size * 0.45f, size * 0.45f), p)
+        } else if (state == 1) {
+            p.color = Color.rgb(235, 30, 30)
+            c.drawRect(RectF(3f, 3f, size * 0.5f, size - 3f), p)
+            p.color = Color.rgb(75, 45, 45)
+            c.drawRect(RectF(size * 0.5f, 3f, size - 3f, size - 3f), p)
+        } else {
+            p.color = Color.rgb(75, 45, 45)
+            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+        }
+        return BitmapDrawable(context.resources, bmp)
+    }
+
+    fun createHunger(context: Context, state: Int, size: Int = 30): Drawable { // 0: Empty, 1: Half, 2: Full
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val c = Canvas(bmp)
+        val p = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        p.color = Color.rgb(40, 20, 10)
+        p.style = Paint.Style.FILL
+        c.drawRoundRect(RectF(1f, 1f, size - 1f, size - 1f), 3f, 3f, p)
+
+        if (state == 2) {
+            p.color = Color.rgb(195, 105, 35)
+            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+            p.color = Color.rgb(245, 185, 95)
+            c.drawRect(RectF(4f, 4f, size * 0.45f, size * 0.45f), p)
+        } else if (state == 1) {
+            p.color = Color.rgb(195, 105, 35)
+            c.drawRect(RectF(size * 0.5f, 3f, size - 3f, size - 3f), p)
+            p.color = Color.rgb(65, 45, 30)
+            c.drawRect(RectF(3f, 3f, size * 0.5f, size - 3f), p)
+        } else {
+            p.color = Color.rgb(65, 45, 30)
+            c.drawRoundRect(RectF(3f, 3f, size - 3f, size - 3f), 2f, 2f, p)
+        }
         return BitmapDrawable(context.resources, bmp)
     }
 }
@@ -245,6 +310,7 @@ object Engine {
     external fun nativeSelectSlot(slot: Int)
     external fun nativeSaveWorld()
     external fun nativeGetInventory(): String
+    external fun nativeGetHotbar(): String
     external fun nativeGetPlayerStats(): String
     external fun nativeSetRenderDistance(distance: Int)
     external fun nativeSetFov(fov: Float)
@@ -259,11 +325,7 @@ object Engine {
         }
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
-            if (!nativeIsInitialized()) {
-                nativeInit(width, height, saveDir)
-            } else {
-                nativeResize(width, height)
-            }
+            nativeInit(width, height, saveDir)
         }
 
         override fun onDrawFrame(gl: GL10?) {
@@ -279,14 +341,17 @@ class Activity : AndroidActivity() {
     private lateinit var rootLayout: FrameLayout
     private var glView: GLSurfaceView? = null
 
-    // Bağımsız Multi-Touch Takip Havuzu
+    // Birleşik Multi-Touch Pointer Takip Sistemi
     private var joyPointerId = -1
     private var joyOriginX = 0f
     private var joyOriginY = 0f
     private var joyKnobView: View? = null
     private var joyBaseView: View? = null
 
+    private var breakPointerId = -1
+    private var jumpPointerId = -1
     private var camPointerId = -1
+
     private var lastCamX = 0f
     private var lastCamY = 0f
     private var touchDownX = 0f
@@ -303,6 +368,7 @@ class Activity : AndroidActivity() {
     private var statsTextView: TextView? = null
     private var healthBar: LinearLayout? = null
     private var hungerBar: LinearLayout? = null
+    private var hotbarSlotsLayout: LinearLayout? = null
 
     private val prefs by lazy { getSharedPreferences("omni_settings", Context.MODE_PRIVATE) }
 
@@ -429,7 +495,7 @@ class Activity : AndroidActivity() {
             layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
 
-        // 1. Hassas Artı İşareti (Crosshair)
+        // 1. Crosshair
         val chV = View(this).apply {
             background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
             layoutParams = FrameLayout.LayoutParams(dp(2.5f), dp(20f)).apply { gravity = Gravity.CENTER }
@@ -441,7 +507,7 @@ class Activity : AndroidActivity() {
         hud.addView(chV)
         hud.addView(chH)
 
-        // 2. Üst Durum Çubuğu (FPS, XYZ, Can & Açlık Barları, Pause Butonu)
+        // 2. Üst Durum Çubuğu (XYZ/FPS, 10 Kalp, 10 Açlık, Pause Butonu)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -458,7 +524,6 @@ class Activity : AndroidActivity() {
         }
         topBar.addView(statsTextView)
 
-        // Can ve Açlık Barları
         val statusBars = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_HORIZONTAL
@@ -474,23 +539,17 @@ class Activity : AndroidActivity() {
         }
 
         for (i in 0 until 10) {
-            val heart = View(this).apply {
-                background = GradientDrawable().apply {
-                    setColor(Color.rgb(235, 45, 45))
-                    cornerRadius = dp(2f).toFloat()
-                }
-                layoutParams = LinearLayout.LayoutParams(dp(10f), dp(10f)).apply { setMargins(dp(1f), 0, dp(1f), 0) }
+            val heart = ImageView(this).apply {
+                setImageDrawable(MinecraftIconFactory.createHeart(this@Activity, 2, dp(12f)))
+                layoutParams = LinearLayout.LayoutParams(dp(12f), dp(12f)).apply { setMargins(dp(0.5f), 0, dp(0.5f), 0) }
             }
             healthBar?.addView(heart)
 
-            val hungerIcon = View(this).apply {
-                background = GradientDrawable().apply {
-                    setColor(Color.rgb(205, 130, 45))
-                    cornerRadius = dp(2f).toFloat()
-                }
-                layoutParams = LinearLayout.LayoutParams(dp(10f), dp(10f)).apply { setMargins(dp(1f), 0, dp(1f), 0) }
+            val hunger = ImageView(this).apply {
+                setImageDrawable(MinecraftIconFactory.createHunger(this@Activity, 2, dp(12f)))
+                layoutParams = LinearLayout.LayoutParams(dp(12f), dp(12f)).apply { setMargins(dp(0.5f), 0, dp(0.5f), 0) }
             }
-            hungerBar?.addView(hungerIcon)
+            hungerBar?.addView(hunger)
         }
 
         statusBars.addView(healthBar)
@@ -512,7 +571,7 @@ class Activity : AndroidActivity() {
         topBar.addView(pauseBtn)
         hud.addView(topBar)
 
-        // 3. Kompakt Joystick Tabanı ve Tutamaç
+        // 3. Joystick Görseli
         joyBaseView = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -538,16 +597,8 @@ class Activity : AndroidActivity() {
         hud.addView(joyBaseView)
         hud.addView(joyKnobView)
 
-        // 4. Sağ Aksiyon Butonları (KIR ve ZIPLA)
-        val rightActionArea = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER_HORIZONTAL
-            layoutParams = FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-                setMargins(0, 0, dp(24f), dp(24f))
-            }
-        }
-
-        val breakBtn = ImageButton(this).apply {
+        // 4. Sağ Aksiyon Görselleri (KIR ve ZIPLA)
+        val breakVisual = ImageView(this).apply {
             setImageDrawable(VectorIconFactory.createBreakIcon(this@Activity, dp(54f)))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             background = GradientDrawable().apply {
@@ -555,17 +606,12 @@ class Activity : AndroidActivity() {
                 setColor(Color.argb(175, 195, 45, 45))
                 setStroke(dp(1.5f), Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(dp(54f), dp(54f)).apply { setMargins(0, 0, 0, dp(12f)) }
-            setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { Engine.nativeSetBreaking(true); true }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { Engine.nativeSetBreaking(false); true }
-                    else -> false
-                }
+            layoutParams = FrameLayout.LayoutParams(dp(54f), dp(54f)).apply {
+                gravity = Gravity.BOTTOM or Gravity.END
+                setMargins(0, 0, dp(24f), dp(88f))
             }
         }
-
-        val jumpBtn = ImageButton(this).apply {
+        val jumpVisual = ImageView(this).apply {
             setImageDrawable(VectorIconFactory.createJumpIcon(this@Activity, dp(60f)))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
             background = GradientDrawable().apply {
@@ -573,21 +619,15 @@ class Activity : AndroidActivity() {
                 setColor(Color.argb(175, 35, 105, 185))
                 setStroke(dp(1.5f), Color.WHITE)
             }
-            layoutParams = LinearLayout.LayoutParams(dp(60f), dp(60f))
-            setOnTouchListener { _, event ->
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { Engine.nativeSetJumpState(true); true }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { Engine.nativeSetJumpState(false); true }
-                    else -> false
-                }
+            layoutParams = FrameLayout.LayoutParams(dp(60f), dp(60f)).apply {
+                gravity = Gravity.BOTTOM or Gravity.END
+                setMargins(0, 0, dp(24f), dp(20f))
             }
         }
+        hud.addView(breakVisual)
+        hud.addView(jumpVisual)
 
-        rightActionArea.addView(breakBtn)
-        rightActionArea.addView(jumpBtn)
-        hud.addView(rightActionArea)
-
-        // 5. 9'lu Kompakt Hotbar
+        // 5. 9'lu Hotbar
         val hotbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -596,7 +636,7 @@ class Activity : AndroidActivity() {
             }
         }
 
-        val hotbarSlots = LinearLayout(this).apply {
+        hotbarSlotsLayout = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             background = GradientDrawable().apply {
                 setColor(Color.argb(185, 18, 26, 38))
@@ -605,8 +645,6 @@ class Activity : AndroidActivity() {
             }
             setPadding(dp(2f), dp(2f), dp(2f), dp(2f))
         }
-
-        val initialBlockIds = intArrayOf(9, 4, 19, 32, 36, 1, 2, 7, 44)
 
         for (i in 0 until 9) {
             val slotContainer = FrameLayout(this).apply {
@@ -619,14 +657,13 @@ class Activity : AndroidActivity() {
             }
 
             val blockIcon = ImageView(this).apply {
-                setImageDrawable(BlockIconFactory.getIcon(this@Activity, initialBlockIds[i], dp(32f)))
                 scaleType = ImageView.ScaleType.FIT_CENTER
                 layoutParams = FrameLayout.LayoutParams(dp(28f), dp(28f)).apply { gravity = Gravity.CENTER }
             }
             slotContainer.addView(blockIcon)
 
             val countText = TextView(this).apply {
-                text = if (i == 3) "16" else "64"
+                text = ""
                 textSize = 8.5f
                 setTextColor(Color.WHITE)
                 setShadowLayer(2f, 1f, 1f, Color.BLACK)
@@ -636,22 +673,9 @@ class Activity : AndroidActivity() {
             }
             slotContainer.addView(countText)
 
-            slotContainer.setOnTouchListener { _, event ->
-                if (event.actionMasked == MotionEvent.ACTION_DOWN) {
-                    Engine.nativeSelectSlot(i)
-                    for (j in 0 until hotbarSlots.childCount) {
-                        (hotbarSlots.getChildAt(j).background as GradientDrawable).apply {
-                            setColor(if (j == i) Color.argb(190, 80, 140, 180) else Color.argb(70, 0, 0, 0))
-                            setStroke(if (j == i) dp(2f) else dp(1f), if (j == i) Color.WHITE else Color.GRAY)
-                        }
-                    }
-                }
-                true
-            }
-
-            hotbarSlots.addView(slotContainer)
+            hotbarSlotsLayout?.addView(slotContainer)
         }
-        hotbarContainer.addView(hotbarSlots)
+        hotbarContainer.addView(hotbarSlotsLayout)
 
         val invBtn = Button(this).apply {
             text = "•••"
@@ -668,8 +692,15 @@ class Activity : AndroidActivity() {
         hotbarContainer.addView(invBtn)
         hud.addView(hotbarContainer)
 
-        // 6. Eşzamanlı Çoklu Dokunma (Multi-Touch) & Ekrana Dokunarak Blok Koyma
+        // 6. MASTER BİRLEŞİK ÇOKLU DOKUNMATİK DİSPATCHER (MEGA ÇÖZÜM)
         hud.setOnTouchListener { _, event ->
+            val w = rootLayout.width.toFloat()
+            val h = rootLayout.height.toFloat()
+
+            val breakRect = RectF(w - dp(90f), h - dp(150f), w, h - dp(75f))
+            val jumpRect = RectF(w - dp(90f), h - dp(75f), w, h)
+            val hotbarRect = RectF(w * 0.30f, h - dp(56f), w * 0.70f, h)
+
             val pIdx = event.actionIndex
             val pId = event.getPointerId(pIdx)
             val px = event.getX(pIdx)
@@ -677,12 +708,23 @@ class Activity : AndroidActivity() {
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (px < root.width * 0.38f && joyPointerId == -1) {
+                    if (breakRect.contains(px, py) && breakPointerId == -1) {
+                        breakPointerId = pId
+                        Engine.nativeSetBreaking(true)
+                    } else if (jumpRect.contains(px, py) && jumpPointerId == -1) {
+                        jumpPointerId = pId
+                        Engine.nativeSetJumpState(true)
+                    } else if (hotbarRect.contains(px, py)) {
+                        val slotW = hotbarRect.width() / 9f
+                        val sel = ((px - hotbarRect.left) / slotW).toInt().coerceIn(0, 8)
+                        Engine.nativeSelectSlot(sel)
+                        updateHotbarVisuals(sel)
+                    } else if (px < w * 0.40f && joyPointerId == -1) {
                         joyPointerId = pId
                         joyOriginX = joyBaseView?.let { it.x + it.width / 2f } ?: px
                         joyOriginY = joyBaseView?.let { it.y + it.height / 2f } ?: py
                         handleJoystick(px, py)
-                    } else if (px >= root.width * 0.35f && camPointerId == -1) {
+                    } else if (px >= w * 0.35f && camPointerId == -1) {
                         camPointerId = pId
                         lastCamX = px
                         lastCamY = py
@@ -693,13 +735,13 @@ class Activity : AndroidActivity() {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     for (i in 0 until event.pointerCount) {
-                        val currentId = event.getPointerId(i)
+                        val curId = event.getPointerId(i)
                         val x = event.getX(i)
                         val y = event.getY(i)
 
-                        if (currentId == joyPointerId) {
+                        if (curId == joyPointerId) {
                             handleJoystick(x, y)
-                        } else if (currentId == camPointerId) {
+                        } else if (curId == camPointerId) {
                             val dx = (x - lastCamX) * 0.22f * sensitivity
                             val dy = (y - lastCamY) * 0.22f * sensitivity
                             Engine.nativeCameraInput(dx, dy)
@@ -709,6 +751,14 @@ class Activity : AndroidActivity() {
                     }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                    if (pId == breakPointerId) {
+                        breakPointerId = -1
+                        Engine.nativeSetBreaking(false)
+                    }
+                    if (pId == jumpPointerId) {
+                        jumpPointerId = -1
+                        Engine.nativeSetJumpState(false)
+                    }
                     if (pId == joyPointerId) {
                         joyPointerId = -1
                         Engine.nativeInput(0f, 0f)
@@ -717,17 +767,17 @@ class Activity : AndroidActivity() {
                     if (pId == camPointerId) {
                         val duration = System.currentTimeMillis() - touchDownTime
                         val distMoved = Math.hypot((lastCamX - touchDownX).toDouble(), (lastCamY - touchDownY).toDouble())
-                        if (duration < 240 && distMoved < 20.0) {
+                        if (duration < 240 && distMoved < 20.0 && !breakRect.contains(lastCamX, lastCamY) && !jumpRect.contains(lastCamX, lastCamY)) {
                             Engine.nativeTapPlaceAt(lastCamX, lastCamY)
                         }
                         camPointerId = -1
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> {
-                    joyPointerId = -1
-                    camPointerId = -1
-                    Engine.nativeInput(0f, 0f)
-                    resetJoystickKnob()
+                    if (pId == breakPointerId) { breakPointerId = -1; Engine.nativeSetBreaking(false) }
+                    if (pId == jumpPointerId) { jumpPointerId = -1; Engine.nativeSetJumpState(false) }
+                    if (pId == joyPointerId) { joyPointerId = -1; Engine.nativeInput(0f, 0f); resetJoystickKnob() }
+                    if (pId == camPointerId) { camPointerId = -1 }
                 }
             }
             true
@@ -735,7 +785,7 @@ class Activity : AndroidActivity() {
 
         root.addView(hud)
 
-        // Durum Güncelleme Döngüsü
+        // Durum & Hotbar Otomatik Güncelleme
         statsUpdater = object : Runnable {
             override fun run() {
                 try {
@@ -750,26 +800,29 @@ class Activity : AndroidActivity() {
 
                         statsTextView?.text = String.format("XYZ: %.1f, %.1f, %.1f  •  %.0f FPS", x, y, z, fps)
 
-                        // Can ve Açlık Görselleri Güncelleme
-                        val fullHearts = (hp / 2.0f).toInt().coerceIn(0, 10)
+                        // 10'lu Minecraft Kalp Güncellemesi
                         healthBar?.let { hb ->
-                            for (i in 0 until hb.childCount) {
-                                (hb.getChildAt(i).background as GradientDrawable).setColor(
-                                    if (i < fullHearts) Color.rgb(235, 45, 45) else Color.rgb(60, 20, 20)
-                                )
+                            for (i in 0 until 10) {
+                                val heartHp = (hp - i * 2.0f).coerceIn(0.0f, 2.0f)
+                                val state = if (heartHp >= 1.5f) 2 else if (heartHp >= 0.5f) 1 else 0
+                                (hb.getChildAt(i) as ImageView).setImageDrawable(MinecraftIconFactory.createHeart(this@Activity, state, dp(12f)))
                             }
                         }
-                        val fullHunger = (hunger / 2.0f).toInt().coerceIn(0, 10)
+
+                        // 10'lu Minecraft Açlık Güncellemesi
                         hungerBar?.let { ub ->
-                            for (i in 0 until ub.childCount) {
-                                (ub.getChildAt(i).background as GradientDrawable).setColor(
-                                    if (i < fullHunger) Color.rgb(205, 130, 45) else Color.rgb(60, 40, 20)
-                                )
+                            for (i in 0 until 10) {
+                                val hungerHp = (hunger - i * 2.0f).coerceIn(0.0f, 2.0f)
+                                val state = if (hungerHp >= 1.5f) 2 else if (hungerHp >= 0.5f) 1 else 0
+                                (ub.getChildAt(i) as ImageView).setImageDrawable(MinecraftIconFactory.createHunger(this@Activity, state, dp(12f)))
                             }
                         }
+
+                        // Hotbar Slotlarının Canlı Senkronizasyonu (Blok Sayısı Eksilmesi)
+                        refreshHotbarFromNative()
                     }
                 } catch (_: Exception) {}
-                mainHandler.postDelayed(this, 250)
+                mainHandler.postDelayed(this, 120)
             }
         }
         mainHandler.post(statsUpdater!!)
@@ -781,6 +834,44 @@ class Activity : AndroidActivity() {
                 Engine.nativeSetDayNight(dayNightEnabled)
             }
         }, 150)
+    }
+
+    private fun updateHotbarVisuals(selectedSlot: Int) {
+        hotbarSlotsLayout?.let { layout ->
+            for (j in 0 until layout.childCount) {
+                (layout.getChildAt(j).background as GradientDrawable).apply {
+                    setColor(if (j == selectedSlot) Color.argb(190, 80, 140, 180) else Color.argb(70, 0, 0, 0))
+                    setStroke(if (j == selectedSlot) dp(2f) else dp(1f), if (j == selectedSlot) Color.WHITE else Color.GRAY)
+                }
+            }
+        }
+    }
+
+    private fun refreshHotbarFromNative() {
+        try {
+            val hbData = JSONArray(Engine.nativeGetHotbar())
+            hotbarSlotsLayout?.let { layout ->
+                for (i in 0 until hbData.length()) {
+                    val obj = hbData.getJSONObject(i)
+                    val id = obj.getInt("id")
+                    val count = obj.getInt("count")
+
+                    val slot = layout.getChildAt(i) as FrameLayout
+                    val icon = slot.getChildAt(0) as ImageView
+                    val countTxt = slot.getChildAt(1) as TextView
+
+                    if (count > 0 && id > 0) {
+                        icon.setImageDrawable(BlockIconFactory.getIcon(this@Activity, id, dp(28f)))
+                        icon.visibility = View.VISIBLE
+                        countTxt.text = if (count > 1) "$count" else ""
+                    } else {
+                        icon.setImageDrawable(null)
+                        icon.visibility = View.INVISIBLE
+                        countTxt.text = ""
+                    }
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     private fun handleJoystick(touchX: Float, touchY: Float) {

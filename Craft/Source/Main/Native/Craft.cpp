@@ -19,29 +19,24 @@ static void logEngineMessage(const char* msg) {
 
 static void nativeSignalHandler(int sig, siginfo_t* info, void*) {
     char filePath[600];
-    time_t rawtime;
-    time(&rawtime);
-    struct tm* timeinfo = localtime(&rawtime);
+    time_t rawtime; time(&rawtime);
+    struct tm* ti = localtime(&rawtime);
 
     snprintf(filePath, sizeof(filePath), "%s/crash_native_%04d%02d%02d_%02d%02d%02d.log",
              gCrashLogDir[0] ? gCrashLogDir : "/sdcard/Documents/Omni_Craft",
-             timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
-             timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+             ti->tm_year + 1900, ti->tm_mon + 1, ti->tm_mday,
+             ti->tm_hour, ti->tm_min, ti->tm_sec);
 
     int fd = open(filePath, O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd >= 0) {
         char buf[512];
         snprintf(buf, sizeof(buf),
-                 "=== OMNI CRAFT CRASH REPORT ===\n"
-                 "Signal: %d, Fault Addr: %p\n"
-                 "Time: %04d-%02d-%02d %02d:%02d:%02d\n",
-                 sig, info->si_addr,
-                 timeinfo->tm_year + 1900, timeinfo->tm_mon + 1, timeinfo->tm_mday,
-                 timeinfo->tm_hour, timeinfo->tm_min, timeinfo->tm_sec);
+                 "=== OMNI CRAFT CRASH REPORT ===\nSignal: %d, Fault Addr: %p\nTime: %04d-%02d-%02d %02d:%02d:%02d\n",
+                 sig, info->si_addr, ti->tm_year + 1900, ti->tm_mon + 1, ti->tm_mday, ti->tm_hour, ti->tm_min, ti->tm_sec);
         write(fd, buf, strlen(buf));
         close(fd);
     }
-    LOGE("Yerel motor çökmesi yakalandı: %s", filePath);
+    LOGE("Yerel motor çökmesi: %s", filePath);
     _exit(1);
 }
 
@@ -320,7 +315,7 @@ void Chunk::buildMesh(const World& world) {
                 if (!BD(bBack).solid) {
                     float ao0 = calcAO(isSolid(x+1, y, z-1), isSolid(x, y-1, z-1), isSolid(x+1, y-1, z-1));
                     float ao1 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y-1, z-1), isSolid(x-1, y-1, z-1));
-                    float ao2 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y+1, z-1), isSolid(x-1, y+1, z-1));
+                    float ao2 = calcAO(isSolid(x-1, y, z-1), isSolid(x, y-1, z-1), isSolid(x-1, y+1, z-1));
                     float ao3 = calcAO(isSolid(x+1, y, z-1), isSolid(x, y+1, z-1), isSolid(x+1, y+1, z-1));
                     addQuad(opaqueVerts, BD(id).sideTile, 0.85f, ao0, ao1, ao2, ao3,
                             wx+1, wy+0, wz+0, wx+0, wy+0, wz+0,
@@ -470,7 +465,6 @@ void World::generateChunk(Chunk& c) {
         }
     }
 
-    // Mob doğma konumu (Ağaç ve blokların üstündeki temiz hava sahası)
     if ((c.cx + c.cz) % 4 == 0) {
         int gx = bx + 8;
         int gz = bz + 8;
@@ -524,6 +518,7 @@ void World::spawnMob(EntityType type, Vec3 pos) {
     e.type = type;
     e.pos = pos;
     e.health = (type == ENT_COW ? 15.0f : 10.0f);
+    e.maxHealth = e.health;
     entities.push_back(e);
 }
 
@@ -617,6 +612,7 @@ void World::updateEntities(float dt, const Vec3& playerPos) {
     for (auto& e : entities) {
         if (!e.alive) continue;
         e.animTime += dt;
+        if (e.hurtTimer > 0.0f) e.hurtTimer -= dt;
 
         if (e.type == ENT_ITEM_DROP) {
             e.pos += e.vel * dt;
@@ -632,6 +628,11 @@ void World::updateEntities(float dt, const Vec3& playerPos) {
             }
         } else {
             e.vel.y += GRAVITY * dt;
+            e.pos.x += e.vel.x * dt;
+            e.pos.z += e.vel.z * dt;
+            e.vel.x *= 0.88f;
+            e.vel.z *= 0.88f;
+
             Vec3 nextPos = e.pos;
             nextPos.y += e.vel.y * dt;
 
@@ -695,6 +696,28 @@ World::RayHit World::raycast(Vec3 origin, Vec3 dir, float maxD) const {
         else                    { tZ += tDZ; iz += (int)sZ; normal = {0, 0, -(int)sZ}; }
     }
     return r;
+}
+
+Entity* World::hitEntity(Vec3 origin, Vec3 dir, float maxD) {
+    std::lock_guard lk(entityMtx);
+    Entity* best = nullptr;
+    float bestDist = maxD;
+    dir = dir.norm();
+
+    for (auto& e : entities) {
+        if (!e.alive || e.type == ENT_ITEM_DROP) continue;
+        Vec3 toEnt = (e.pos + Vec3{0, 0.6f, 0}) - origin;
+        float proj = toEnt.dot(dir);
+        if (proj > 0.0f && proj < bestDist) {
+            Vec3 closest = origin + dir * proj;
+            float distSq = (closest - (e.pos + Vec3{0, 0.6f, 0})).len();
+            if (distSq < 1.05f) {
+                bestDist = proj;
+                best = &e;
+            }
+        }
+    }
+    return best;
 }
 
 static constexpr uint32_t SAVE_MAGIC = 0x4F4D4E41u;
@@ -883,7 +906,7 @@ void Renderer::generateTextures() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    // 10 Kademeli Çatlak Dokusu (Crack Atlas 320x32)
+    // 10 Kademeli Çatlak Dokusu
     std::vector<uint32_t> crackPixels(320 * 32, makeRGBA(0, 0, 0, 0));
     for (int stage = 0; stage < 10; ++stage) {
         int startX = stage * 32;
@@ -1041,10 +1064,12 @@ precision mediump float;
 in vec3 vNorm;
 uniform vec3 uColor;
 uniform float uDaylight;
+uniform float uHurt;
 out vec4 FragColor;
 void main(){
     float diffuse = max(dot(vNorm, normalize(vec3(0.4, 0.8, 0.3))), 0.0) * 0.45 + 0.55;
     vec3 lit = uColor * diffuse * (0.3 + 0.7 * uDaylight);
+    if(uHurt > 0.01) lit = mix(lit, vec3(1.0, 0.1, 0.1), 0.65);
     FragColor = vec4(lit, 1.0);
 })";
 
@@ -1133,6 +1158,7 @@ void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float y
     glUniformMatrix4fv(glGetUniformLocation(entityProg, "uMVP"), 1, GL_FALSE, mvp.m);
     glUniform3f(glGetUniformLocation(entityProg, "uColor"), color.x, color.y, color.z);
     glUniform1f(glGetUniformLocation(entityProg, "uDaylight"), 1.0f);
+    glUniform1f(glGetUniformLocation(entityProg, "uHurt"), 0.0f);
 
     glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
@@ -1162,17 +1188,11 @@ void Renderer::drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t bl
         verts.push_back({x3, y3, z3, tx, ty, light, 1.0f});
     };
 
-    // +Y
     addFace(def.topTile, 1.0f, -0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f, -0.5f);
-    // -Y
     addFace(def.botTile, 0.55f, -0.5f, -0.5f, 0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f);
-    // +Z
     addFace(def.sideTile, 0.85f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f);
-    // -Z
     addFace(def.sideTile, 0.85f, 0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f);
-    // +X
     addFace(def.sideTile, 0.72f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, 0.5f, 0.5f);
-    // -X
     addFace(def.sideTile, 0.72f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f, 0.5f, -0.5f, 0.5f, 0.5f, -0.5f, 0.5f, -0.5f);
 
     Mat4 model = Mat4::identity();
@@ -1314,7 +1334,6 @@ void Renderer::drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, f
         glDrawArrays(GL_TRIANGLES, 0, 36);
     }
 
-    // 3B Hacimsel & Boşluklu Bulut Örtüsü
     float cloudShift = fmodf(time * 2.2f, 96.0f);
     int cx = flr(playerPos.x / 48.0f);
     int cz = flr(playerPos.z / 48.0f);
@@ -1343,11 +1362,13 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
     glDisable(GL_CULL_FACE);
     glEnable(GL_DEPTH_TEST);
     float legAngle = sinf(e.animTime * 7.5f) * 28.0f * e.walkSpeed;
-    float rad = e.yaw * 0.01745329f;
     float headRad = e.headYaw * 0.01745329f;
 
     Vec3 eyeWhite{0.96f, 0.96f, 0.96f};
     Vec3 pupilBlack{0.05f, 0.05f, 0.05f};
+
+    glUseProgram(entityProg);
+    glUniform1f(glGetUniformLocation(entityProg, "uHurt"), e.hurtTimer > 0.0f ? 1.0f : 0.0f);
 
     if (e.type == ENT_PIG) {
         Vec3 pink{0.96f, 0.65f, 0.65f};
@@ -1409,73 +1430,10 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e, float daylight) {
         uint8_t dropBlock = (e.itemId < BLOCK_COUNT && e.itemId > 0) ? static_cast<uint8_t>(e.itemId) : OAK_PLANKS;
         drawTexturedCube(vp, e.pos + Vec3{0, 0.25f + bob, 0}, {0.32f, 0.32f, 0.32f}, dropBlock, e.animTime * 95.0f, 15.0f, 0.0f);
     }
+    glUniform1f(glGetUniformLocation(entityProg, "uHurt"), 0.0f);
     glEnable(GL_CULL_FACE);
 }
 
-// 10 Parçalı Karakter Modeli
-void Renderer::drawCharacterModel(const Mat4& vp, Vec3 pos, float yaw, float pitch, float animTime, float walkSpeed, uint8_t heldBlockId, float swingProgress) {
-    glDisable(GL_CULL_FACE);
-    glEnable(GL_DEPTH_TEST);
-    float rad = yaw * 0.01745329f;
-    float legAngle = sinf(animTime * 8.0f) * 32.0f * walkSpeed;
-    float armAngle = sinf(animTime * 8.0f) * 32.0f * walkSpeed;
-
-    Vec3 skinColor{0.88f, 0.68f, 0.52f};
-    Vec3 shirtColor{0.15f, 0.60f, 0.75f};
-    Vec3 pantsColor{0.18f, 0.28f, 0.62f};
-    Vec3 eyeWhite{0.96f, 0.96f, 0.96f};
-    Vec3 pupilColor{0.12f, 0.15f, 0.50f};
-    Vec3 mouthColor{0.60f, 0.20f, 0.20f};
-
-    // 1. Gövde (Torso)
-    drawBox(vp, pos + Vec3{0, 0.85f, 0}, {0.55f, 0.70f, 0.30f}, shirtColor, yaw);
-
-    // 2. Kafa (Head)
-    Vec3 headPos = pos + Vec3{0, 1.45f, 0};
-    drawBox(vp, headPos, {0.45f, 0.45f, 0.45f}, skinColor, yaw, pitch);
-
-    // 3 & 4. Gözler (Left & Right Eyes)
-    Vec3 eyeL = headPos + Vec3{sinf(rad)*0.24f + cosf(rad)*0.12f, 0.08f, -cosf(rad)*0.24f + sinf(rad)*0.12f};
-    Vec3 eyeR = headPos + Vec3{sinf(rad)*0.24f - cosf(rad)*0.12f, 0.08f, -cosf(rad)*0.24f - sinf(rad)*0.12f};
-    drawBox(vp, eyeL, {0.08f, 0.08f, 0.04f}, eyeWhite, yaw, pitch);
-    drawBox(vp, eyeR, {0.08f, 0.08f, 0.04f}, eyeWhite, yaw, pitch);
-    drawBox(vp, eyeL + Vec3{sinf(rad)*0.02f, 0, -cosf(rad)*0.02f}, {0.05f, 0.05f, 0.02f}, pupilColor, yaw, pitch);
-    drawBox(vp, eyeR + Vec3{sinf(rad)*0.02f, 0, -cosf(rad)*0.02f}, {0.05f, 0.05f, 0.02f}, pupilColor, yaw, pitch);
-
-    // 5. Burun (Nose)
-    Vec3 nosePos = headPos + Vec3{sinf(rad)*0.25f, 0.0f, -cosf(rad)*0.25f};
-    drawBox(vp, nosePos, {0.08f, 0.08f, 0.06f}, skinColor * 0.9f, yaw, pitch);
-
-    // 6. Ağız (Mouth)
-    Vec3 mouthPos = headPos + Vec3{sinf(rad)*0.24f, -0.10f, -cosf(rad)*0.24f};
-    drawBox(vp, mouthPos, {0.18f, 0.05f, 0.04f}, mouthColor, yaw, pitch);
-
-    // 7. Sol Kol (Left Arm)
-    Vec3 armLPos = pos + Vec3{cosf(rad)*0.38f, 0.85f, sinf(rad)*0.38f};
-    drawBox(vp, armLPos, {0.20f, 0.65f, 0.20f}, shirtColor, yaw, armAngle);
-
-    // 8. Sağ Kol (Right Arm - Blok Tutan ve Sallanan El)
-    float swing = sinf(swingProgress * 3.1415926f) * 45.0f;
-    Vec3 armRPos = pos + Vec3{-cosf(rad)*0.38f, 0.85f, -sinf(rad)*0.38f};
-    drawBox(vp, armRPos, {0.20f, 0.65f, 0.20f}, shirtColor, yaw, -armAngle - swing);
-
-    if (heldBlockId > AIR && heldBlockId < BLOCK_COUNT) {
-        Vec3 handBlockPos = armRPos + Vec3{sinf(rad)*0.25f, -0.35f, -cosf(rad)*0.25f};
-        drawTexturedCube(vp, handBlockPos, {0.25f, 0.25f, 0.25f}, heldBlockId, yaw + 45.0f, -swing);
-    }
-
-    // 9. Sol Bacak (Left Leg)
-    Vec3 legLPos = pos + Vec3{cosf(rad)*0.14f, 0.35f, sinf(rad)*0.14f};
-    drawBox(vp, legLPos, {0.22f, 0.70f, 0.22f}, pantsColor, yaw, -legAngle);
-
-    // 10. Sağ Bacak (Right Leg)
-    Vec3 legRPos = pos + Vec3{-cosf(rad)*0.14f, 0.35f, -sinf(rad)*0.14f};
-    drawBox(vp, legRPos, {0.22f, 0.70f, 0.22f}, pantsColor, yaw, legAngle);
-
-    glEnable(GL_CULL_FACE);
-}
-
-// Birinci Şahıs El ve Tutulan Blok Ön İzleme Çizimi
 void Renderer::drawFirstPersonHandAndItem(const Mat4& proj, const Player& player, float time) {
     glDisable(GL_DEPTH_TEST);
     float swing = sinf(player.handSwingProgress * 3.1415926f);
@@ -1492,12 +1450,12 @@ void Renderer::drawFirstPersonHandAndItem(const Mat4& proj, const Player& player
     glUniformMatrix4fv(glGetUniformLocation(entityProg, "uMVP"), 1, GL_FALSE, handModel.m);
     glUniform3f(glGetUniformLocation(entityProg, "uColor"), 0.88f, 0.68f, 0.52f);
     glUniform1f(glGetUniformLocation(entityProg, "uDaylight"), 1.0f);
+    glUniform1f(glGetUniformLocation(entityProg, "uHurt"), 0.0f);
 
     glBindVertexArray(boxVAO);
     glDrawArrays(GL_TRIANGLES, 0, 36);
     glBindVertexArray(0);
 
-    // Elin Ucunda Tutulan 3B Blok
     const ItemStack& held = player.inv.slots[player.inv.selected % HOTBAR_SZ];
     if (!held.empty() && held.id > AIR && held.id < BLOCK_COUNT) {
         Vec3 blockPos = {0.32f + bobX - swing * 0.08f, -0.22f - bobY - swing * 0.20f, -0.55f - swing * 0.15f};
@@ -1534,7 +1492,7 @@ void Renderer::frame(World& world, Player& player, float time) {
 
     drawAtmosphere(vp, player.pos, player.worldTime, time);
 
-    // 1. Opak Voxel Bloklar
+    // 1. Opak Bloklar
     glUseProgram(worldProg);
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, vp.m);
     glUniform1f(glGetUniformLocation(worldProg, "uDaylight"), daylight);
@@ -1579,12 +1537,12 @@ void Renderer::frame(World& world, Player& player, float time) {
         }
     }
 
-    // 3. Sadece Baktığımız Yüzeyde Kırılma Çatlak Animasyonu
+    // 3. Yüzey Kırılma Çatlağı
     if (player.isBreaking && player.breakProgress > 0.0f) {
         drawTargetedFaceCrack(vp, player.breakingBlock, player.breakingFace, player.breakProgress);
     }
 
-    // 4. Moblar ve Düşen 3B Bloklar
+    // 4. Moblar ve Düşen Bloklar
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
         if (e.alive) drawMob(vp, e, daylight);
@@ -1596,7 +1554,7 @@ void Renderer::frame(World& world, Player& player, float time) {
         drawBox(vp, p.pos, {p.size, p.size, p.size}, p.color);
     }
 
-    // 6. Birinci Şahıs El ve Tutulan Eşya
+    // 6. El ve Önizleme
     drawFirstPersonHandAndItem(proj, player, time);
 }
 
@@ -1636,7 +1594,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetupCrashHandler(JNIEnv
     sigaction(SIGFPE,  &sa, nullptr);
     sigaction(SIGILL,  &sa, nullptr);
 
-    logEngineMessage("Omni Craft Motoru ve Loglama Başlatıldı.");
+    logEngineMessage("Omni Craft Native Motoru Başlatıldı.");
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass, jint w, jint h, jstring saveDir) {
@@ -1652,15 +1610,19 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->renderer.init(w, h);
     gState->world->loadWorld(gState->saveDirectory);
 
-    gState->player.inv.slots[0] = ItemStack(OAK_PLANKS, 64);
-    gState->player.inv.slots[1] = ItemStack(COBBLESTONE, 64);
-    gState->player.inv.slots[2] = ItemStack(DIAMOND_ORE, 64);
-    gState->player.inv.slots[3] = ItemStack(CRAFTING_TABLE, 16);
-    gState->player.inv.slots[4] = ItemStack(TORCH, 64);
-    gState->player.inv.slots[5] = ItemStack(GRASS, 64);
-    gState->player.inv.slots[6] = ItemStack(DIRT, 64);
-    gState->player.inv.slots[7] = ItemStack(OAK_LOG, 64);
-    gState->player.inv.slots[8] = ItemStack(TNT, 64);
+    // Mavi Ekran Çözümü: Tüm chunk GPU bufferlarını yeni OpenGL contextine zorla bağla
+    {
+        std::unique_lock lk(gState->world->chunkMtx);
+        for (auto& [k, ch] : gState->world->chunks) {
+            ch->vao = 0; ch->vbo = 0;
+            ch->waterVao = 0; ch->waterVbo = 0;
+            ch->vertexCount = 0; ch->waterVertexCount = 0;
+            ch->dirty = true;
+        }
+    }
+
+    // Varsayılan Boş Envanter
+    for (int i = 0; i < INV_SIZE; ++i) gState->player.inv.slots[i] = ItemStack();
 
     bool loaded = loadPlayerFooter(*gState);
     if (!loaded || gState->player.pos.y < 5.0f) {
@@ -1695,6 +1657,9 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     if (gs.player.handSwingProgress > 0.0f) {
         gs.player.handSwingProgress -= sdt * 4.0f;
         if (gs.player.handSwingProgress < 0.0f) gs.player.handSwingProgress = 0.0f;
+    }
+    if (gs.player.attackCooldown > 0.0f) {
+        gs.player.attackCooldown -= sdt;
     }
 
     if (gs.player.dayNightEnabled) {
@@ -1731,19 +1696,20 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.vel.x = moveDir.x;
     gs.player.vel.z = moveDir.z;
 
-    // Yürürken Açlık Tüketimi
     if (moveDir.len() > 0.1f) {
         gs.player.hunger = std::max(0.0f, gs.player.hunger - sdt * 0.025f);
     }
 
-    // Can Yenilenmesi veya Açlıktan Ölme
     if (gs.player.hunger > 17.0f && gs.player.health < 20.0f) {
         gs.player.health = std::min(20.0f, gs.player.health + sdt * 0.45f);
     } else if (gs.player.hunger <= 0.0f) {
         gs.player.health = std::max(0.0f, gs.player.health - sdt * 0.60f);
     }
 
-    // Yürürken Kesintisiz Zıplama & Düşme Takibi
+    // Yürürken Kesintisiz Zıplama & Coyote Time
+    if (gs.player.onGround) gs.player.coyoteTimer = 0.14f;
+    else gs.player.coyoteTimer = std::max(0.0f, gs.player.coyoteTimer - sdt);
+
     if (gs.player.inWater) {
         gs.player.fallStartY = 0.0f;
         if (gs.player.jumpHolding) {
@@ -1758,9 +1724,10 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
                 gs.player.fallStartY = gs.player.pos.y;
             }
         }
-        if (gs.player.jumpHolding && gs.player.onGround) {
+        if (gs.player.jumpHolding && (gs.player.onGround || gs.player.coyoteTimer > 0.0f)) {
             gs.player.vel.y = JUMP_VEL;
             gs.player.onGround = false;
+            gs.player.coyoteTimer = 0.0f;
             gs.player.fallStartY = gs.player.pos.y;
         }
         gs.player.vel.y += GRAVITY * sdt;
@@ -1782,7 +1749,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     p.y += gs.player.vel.y * sdt;
     if (checkCollision(*gs.world, p)) {
         if (gs.player.vel.y < 0) {
-            // Düşme Hasarı Hesaplama
             if (gs.player.fallStartY > 0.0f && !gs.player.inWater) {
                 float fallDist = gs.player.fallStartY - p.y;
                 if (fallDist > 3.2f) {
@@ -1801,7 +1767,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
 
     gs.player.pos = p;
 
-    // Oyuncu Canı Biterse Yeniden Doğma
     if (gs.player.health <= 0.0f) {
         int respawnY = gs.world->getHighestBlock(0, 0);
         gs.player.pos = {0.5f, static_cast<float>(respawnY) + 1.2f, 0.5f};
@@ -1810,34 +1775,56 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.fallStartY = 0.0f;
     }
 
-    // Blok Kırma İşlemi ve Düşen 3B Eşya
+    // Yürürken Kesintisiz Blok Kırma ve Canlılara Saldırı
     if (gs.player.isBreaking) {
         gs.player.handSwingProgress = 1.0f;
-        auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, gs.player.lookDir(), REACH);
-        if (hit.hit) {
-            if (hit.block == gs.player.breakingBlock) {
-                uint8_t targetB = gs.world->blockAt(hit.block.x, hit.block.y, hit.block.z);
-                float hVal = std::max(0.2f, BD(targetB).hardness);
-                gs.player.breakProgress += sdt / (hVal * 0.70f);
-                gs.player.breakingFace = hit.face;
+        Vec3 look = gs.player.lookDir();
 
-                if (gs.player.breakProgress >= 1.0f) {
-                    gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
-                    gs.world->spawnBreakParticles({hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, targetB);
-                    uint16_t drop = BD(targetB).dropId;
-                    if (drop != AIR) {
-                        gs.world->spawnItemDrop(drop, {hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, {0, 2.5f, 0});
+        // 1. Canlı Kontrolü (Mob Vurma)
+        Entity* targetMob = gs.world->hitEntity(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, look, 3.8f);
+        if (targetMob && gs.player.attackCooldown <= 0.0f) {
+            targetMob->health -= 4.0f;
+            targetMob->hurtTimer = 0.35f;
+            targetMob->vel += look * 4.5f + Vec3{0, 2.5f, 0};
+            gs.player.attackCooldown = 0.38f;
+
+            if (targetMob->health <= 0.0f) {
+                targetMob->alive = false;
+                uint16_t meatDrop = (targetMob->type == ENT_PIG) ? ITEM_RAW_PORK :
+                                   ((targetMob->type == ENT_COW) ? ITEM_RAW_BEEF : ITEM_RAW_MUTTON);
+                gs.world->spawnItemDrop(meatDrop, targetMob->pos + Vec3{0, 0.5f, 0}, {0, 2.8f, 0});
+                if (targetMob->type == ENT_SHEEP) {
+                    gs.world->spawnItemDrop(ITEM_WOOL, targetMob->pos + Vec3{0, 0.5f, 0}, {0, 2.8f, 0});
+                }
+            }
+        } else if (!targetMob) {
+            // 2. Blok Kırma
+            auto hit = gs.world->raycast(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, look, REACH);
+            if (hit.hit) {
+                if (hit.block == gs.player.breakingBlock) {
+                    uint8_t targetB = gs.world->blockAt(hit.block.x, hit.block.y, hit.block.z);
+                    float hVal = std::max(0.2f, BD(targetB).hardness);
+                    gs.player.breakProgress += sdt / (hVal * 0.70f);
+                    gs.player.breakingFace = hit.face;
+
+                    if (gs.player.breakProgress >= 1.0f) {
+                        gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
+                        gs.world->spawnBreakParticles({hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, targetB);
+                        uint16_t drop = BD(targetB).dropId;
+                        if (drop != AIR) {
+                            gs.world->spawnItemDrop(drop, {hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, {0, 2.5f, 0});
+                        }
+                        gs.player.breakProgress = 0.0f;
+                        gs.player.breakingBlock = {-999, -999, -999};
                     }
+                } else {
+                    gs.player.breakingBlock = hit.block;
+                    gs.player.breakingFace = hit.face;
                     gs.player.breakProgress = 0.0f;
-                    gs.player.breakingBlock = {-999, -999, -999};
                 }
             } else {
-                gs.player.breakingBlock = hit.block;
-                gs.player.breakingFace = hit.face;
                 gs.player.breakProgress = 0.0f;
             }
-        } else {
-            gs.player.breakProgress = 0.0f;
         }
     } else {
         gs.player.breakProgress = 0.0f;
@@ -1890,7 +1877,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jcla
     auto hit = gState->world->raycast(gState->player.pos + Vec3{0, gState->player.eyeH, 0}, rayDir, REACH);
     if (hit.hit) {
         ItemStack& held = gState->player.inv.active();
-        if (!held.empty() && held.id < BLOCK_COUNT) {
+        if (!held.empty() && held.id < BLOCK_COUNT && held.count > 0) {
             Vec3i target = {hit.block.x + hit.face.x, hit.block.y + hit.face.y, hit.block.z + hit.face.z};
             Vec3 bCenter = {(float)target.x + 0.5f, (float)target.y + 0.5f, (float)target.z + 0.5f};
             if ((bCenter - (gState->player.pos + Vec3{0, 0.9f, 0})).len() > 0.75f) {
@@ -1905,9 +1892,10 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jcla
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetJumpState(JNIEnv*, jclass, jboolean holding) {
     if (!gState) return;
     gState->player.jumpHolding = holding;
-    if (holding && gState->player.onGround && !gState->player.inWater) {
+    if (holding && (gState->player.onGround || gState->player.coyoteTimer > 0.0f) && !gState->player.inWater) {
         gState->player.vel.y = JUMP_VEL;
         gState->player.onGround = false;
+        gState->player.coyoteTimer = 0.0f;
         gState->player.fallStartY = gState->player.pos.y;
     }
 }
@@ -1927,6 +1915,19 @@ JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetInventory(JNIEnv* 
     if (!gState) return env->NewStringUTF("[]");
     std::string json = "[";
     for (int i = 0; i < INV_SIZE; ++i) {
+        if (i > 0) json += ",";
+        char buf[64];
+        snprintf(buf, sizeof(buf), "{\"id\":%d,\"count\":%d}", gState->player.inv.slots[i].id, gState->player.inv.slots[i].count);
+        json += buf;
+    }
+    json += "]";
+    return env->NewStringUTF(json.c_str());
+}
+
+JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetHotbar(JNIEnv* env, jclass) {
+    if (!gState) return env->NewStringUTF("[]");
+    std::string json = "[";
+    for (int i = 0; i < HOTBAR_SZ; ++i) {
         if (i > 0) json += ",";
         char buf[64];
         snprintf(buf, sizeof(buf), "{\"id\":%d,\"count\":%d}", gState->player.inv.slots[i].id, gState->player.inv.slots[i].count);
