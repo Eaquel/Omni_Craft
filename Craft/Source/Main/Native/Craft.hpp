@@ -27,8 +27,8 @@
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
 static constexpr int CS        = 16;
-static constexpr int WH        = 128;
-static constexpr int RD        = 5;
+static constexpr int WH        = 192;
+static constexpr int RD        = 6;
 static constexpr int SEA_LEVEL = 32;
 static constexpr float GRAVITY = -24.0f;
 static constexpr float JUMP_VEL= 8.6f;
@@ -190,6 +190,8 @@ public:
     void spawnBreakParticles(Vec3 pos, uint8_t blockId);
     void updateEntities(float dt);
     void updateParticles(float dt);
+    void streamAround(int centerCx, int centerCz, int radius, int budget);
+    void trimFarChunks(int centerCx, int centerCz, int keepRadius);
 
     struct RayHit { bool hit; Vec3i block, face; float dist; };
     RayHit raycast(Vec3 origin, Vec3 dir, float maxD) const;
@@ -199,6 +201,10 @@ struct Player {
     Vec3 pos{0.5f, 60.0f, 0.5f}, vel{};
     float yaw = 0, pitch = 0;
     float eyeH = 1.62f;
+    float worldTime = 6000.0f;
+    float fov = 70.0f;
+    int renderDistance = 6;
+    bool dayNightEnabled = true;
     bool onGround = false;
     bool inWater = false;
     bool jumpHolding = false;

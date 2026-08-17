@@ -70,16 +70,16 @@ android {
     }
 
     compileOptions {
-        sourceCompatibility = JavaVersion.VERSION_25
-        targetCompatibility = JavaVersion.VERSION_25
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlin {
-        jvmToolchain(25)
+        jvmToolchain(17)
 
         compilerOptions {
             jvmTarget.set(
-                org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_25
+                org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
             )
         }
     }

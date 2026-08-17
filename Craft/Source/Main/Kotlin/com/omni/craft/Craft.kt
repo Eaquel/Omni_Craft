@@ -229,6 +229,9 @@ object Engine {
     external fun nativeSelectSlot(slot: Int)
     external fun nativeSaveWorld()
     external fun nativeGetInventory(): String
+    external fun nativeSetRenderDistance(distance: Int)
+    external fun nativeSetFov(fov: Float)
+    external fun nativeSetDayNight(enabled: Boolean)
     external fun nativeDestroy()
 
     class GameRenderer(private val saveDir: String) : GLSurfaceView.Renderer {
@@ -271,6 +274,10 @@ class Activity : AndroidActivity() {
     private var touchDownTime = 0L
 
     private var sensitivity = 1.0f
+    private var fov = 70.0f
+    private var renderDistance = 6
+    private var dayNightEnabled = true
+    private val prefs by lazy { getSharedPreferences("omni_settings", Context.MODE_PRIVATE) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -283,6 +290,10 @@ class Activity : AndroidActivity() {
 
         rootLayout = FrameLayout(this)
         setContentView(rootLayout)
+        sensitivity=prefs.getFloat("sensitivity",1.0f)
+        fov=prefs.getFloat("fov",70.0f)
+        renderDistance=prefs.getInt("renderDistance",6)
+        dayNightEnabled=prefs.getBoolean("dayNight",true)
         showLobby()
     }
 
@@ -348,6 +359,7 @@ class Activity : AndroidActivity() {
         lobby.addView(createLobbyBtn("DÜNYAYA GİR") { startGame() })
         lobby.addView(createLobbyBtn("AYARLAR") { showSettingsDialog() })
         lobby.addView(createLobbyBtn("ÇIKIŞ") { finish() })
+        lobby.addView(TextView(this).apply { text="Omni Craft • Sonsuz prosedürel dünya • Otomatik kayıt"; textSize=12f; setTextColor(Color.LTGRAY); setPadding(0,24,0,0) })
 
         rootLayout.addView(lobby)
         applyFullScreen()
@@ -620,6 +632,7 @@ class Activity : AndroidActivity() {
         }
 
         root.addView(hud)
+        glView?.postDelayed({ if (Engine.nativeIsInitialized()) { Engine.nativeSetFov(fov); Engine.nativeSetRenderDistance(renderDistance); Engine.nativeSetDayNight(dayNightEnabled) } }, 120)
     }
 
     private fun handleJoystick(touchX: Float, touchY: Float) {
@@ -725,59 +738,19 @@ class Activity : AndroidActivity() {
     }
 
     private fun showSettingsDialog() {
-        val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
-        val layout = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            gravity = Gravity.CENTER
-            setBackgroundColor(Color.argb(240, 20, 24, 30))
-        }
-
-        val title = TextView(this).apply {
-            text = "AYARLAR"
-            textSize = 22f
-            setTextColor(Color.WHITE)
-            setPadding(0, 0, 0, 40)
-        }
-        layout.addView(title)
-
-        val sensLabel = TextView(this).apply {
-            text = "Kamera Hassasiyeti: ${(sensitivity * 100).toInt()}%"
-            textSize = 16f
-            setTextColor(Color.WHITE)
-        }
-        layout.addView(sensLabel)
-
-        val seekBar = SeekBar(this).apply {
-            max = 200
-            progress = (sensitivity * 100).toInt()
-            layoutParams = LinearLayout.LayoutParams(500, 80).apply { setMargins(0, 20, 0, 40) }
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar?, prog: Int, fromUser: Boolean) {
-                    sensitivity = Math.max(0.2f, prog / 100.0f)
-                    sensLabel.text = "Kamera Hassasiyeti: ${(sensitivity * 100).toInt()}%"
-                }
-                override fun onStartTrackingTouch(sb: SeekBar?) {}
-                override fun onStopTrackingTouch(sb: SeekBar?) {}
-            })
-        }
-        layout.addView(seekBar)
-
-        val closeBtn = Button(this).apply {
-            text = "Geri Dön"
-            textSize = 15f
-            setTextColor(Color.WHITE)
-            background = GradientDrawable().apply {
-                cornerRadius = 10f
-                setColor(Color.argb(200, 60, 65, 75))
-                setStroke(2, Color.WHITE)
-            }
-            layoutParams = LinearLayout.LayoutParams(380, 100)
-            setOnClickListener { dialog.dismiss(); applyFullScreen() }
-        }
-        layout.addView(closeBtn)
-
-        dialog.setContentView(layout)
-        dialog.show()
+        val dialog=Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen)
+        val layout=LinearLayout(this).apply{orientation=LinearLayout.VERTICAL;gravity=Gravity.CENTER;setBackgroundColor(Color.rgb(20,24,30));setPadding(40,30,40,30)}
+        fun label(t:String)=TextView(this).apply{text=t;textSize=16f;setTextColor(Color.WHITE);setPadding(0,10,0,5)}
+        layout.addView(label("AYARLAR").apply{textSize=24f;typeface=Typeface.DEFAULT_BOLD})
+        val sl=label("Kamera Hassasiyeti: ${(sensitivity*100).toInt()}%");layout.addView(sl)
+        layout.addView(SeekBar(this).apply{max=200;progress=(sensitivity*100).toInt().coerceIn(20,200);setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(b:SeekBar?,p:Int,u:Boolean){sensitivity=(p.coerceAtLeast(20)/100f);sl.text="Kamera Hassasiyeti: ${(sensitivity*100).toInt()}%"};override fun onStartTrackingTouch(b:SeekBar?){ };override fun onStopTrackingTouch(b:SeekBar?){ }})})
+        val fl=label("Görüş Alanı: ${fov.toInt()}°");layout.addView(fl)
+        layout.addView(SeekBar(this).apply{max=40;progress=(fov-55).toInt();setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(b:SeekBar?,p:Int,u:Boolean){fov=(55+p).toFloat();fl.text="Görüş Alanı: ${fov.toInt()}°";if(Engine.nativeIsInitialized())Engine.nativeSetFov(fov)};override fun onStartTrackingTouch(b:SeekBar?){ };override fun onStopTrackingTouch(b:SeekBar?){ }})})
+        val rl=label("Dünya Görüş Mesafesi: $renderDistance chunk");layout.addView(rl)
+        layout.addView(SeekBar(this).apply{max=3;progress=(renderDistance-3).coerceIn(0,3);setOnSeekBarChangeListener(object:SeekBar.OnSeekBarChangeListener{override fun onProgressChanged(b:SeekBar?,p:Int,u:Boolean){renderDistance=(3+p).coerceIn(3,6);rl.text="Dünya Görüş Mesafesi: $renderDistance chunk";if(Engine.nativeIsInitialized())Engine.nativeSetRenderDistance(renderDistance)};override fun onStartTrackingTouch(b:SeekBar?){ };override fun onStopTrackingTouch(b:SeekBar?){ }})})
+        layout.addView(Switch(this).apply{text="Gündüz / Gece Döngüsü";textSize=16f;setTextColor(Color.WHITE);isChecked=dayNightEnabled;setOnCheckedChangeListener{_,v->dayNightEnabled=v;if(Engine.nativeIsInitialized())Engine.nativeSetDayNight(v)}})
+        layout.addView(Button(this).apply{text="Kaydet ve Geri Dön";layoutParams=LinearLayout.LayoutParams(420,105).apply{topMargin=24};setOnClickListener{prefs.edit().putFloat("sensitivity",sensitivity).putFloat("fov",fov).putInt("renderDistance",renderDistance).putBoolean("dayNight",dayNightEnabled).apply();if(Engine.nativeIsInitialized()){Engine.nativeSetFov(fov);Engine.nativeSetRenderDistance(renderDistance);Engine.nativeSetDayNight(dayNightEnabled)};dialog.dismiss();applyFullScreen()}})
+        dialog.setContentView(layout);dialog.show();applyFullScreen()
     }
 
     private fun showPauseMenu() {

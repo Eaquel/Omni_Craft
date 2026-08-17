@@ -114,9 +114,13 @@ static inline float smoothNoise(float x, float z) {
            (v01 * (1.0f - ux) + v11 * ux) * uz;
 }
 
+static uint32_t gWorldSeed = 0x5EED1234u;
+
 static inline float getTerrainHeight(float x, float z) {
-    return 30.0f + smoothNoise(x * 0.015f, z * 0.015f) * 18.0f +
-                   smoothNoise(x * 0.05f,  z * 0.05f)  * 8.0f;
+    const float sx = static_cast<float>((gWorldSeed & 0xFFFFu)) * 0.00001f;
+    const float sz = static_cast<float>((gWorldSeed >> 16) & 0xFFFFu) * 0.00001f;
+    return 30.0f + smoothNoise(x * 0.015f + sx, z * 0.015f + sz) * 18.0f +
+                   smoothNoise(x * 0.05f - sz, z * 0.05f + sx) * 8.0f;
 }
 
 static Vec3 getRayDirection(const Player& player, float screenX, float screenY, int screenW, int screenH) {
@@ -476,6 +480,28 @@ void World::updateParticles(float dt) {
     }
 }
 
+void World::streamAround(int centerCx, int centerCz, int radius, int budget) {
+    int generated = 0;
+    for (int ring = 0; ring <= radius && generated < budget; ++ring) {
+        for (int dx = -ring; dx <= ring && generated < budget; ++dx) {
+            for (int dz = -ring; dz <= ring && generated < budget; ++dz) {
+                if (std::max(std::abs(dx), std::abs(dz)) != ring) continue;
+                auto ch = getOrCreate(centerCx + dx, centerCz + dz);
+                if (!ch->generated) { generateChunk(*ch); ++generated; }
+            }
+        }
+    }
+}
+
+void World::trimFarChunks(int centerCx, int centerCz, int keepRadius) {
+    std::unique_lock lk(chunkMtx);
+    for (auto it = chunks.begin(); it != chunks.end();) {
+        auto ch = it->second;
+        if (std::max(std::abs(ch->cx - centerCx), std::abs(ch->cz - centerCz)) > keepRadius) it = chunks.erase(it);
+        else ++it;
+    }
+}
+
 static bool checkCollision(const World& world, Vec3 pos);
 
 void World::updateEntities(float dt) {
@@ -551,15 +577,18 @@ World::RayHit World::raycast(Vec3 origin, Vec3 dir, float maxD) const {
 }
 
 void World::saveWorld(const std::string& path) {
+    if (path.empty()) return;
     std::string file = path + "/world_save.dat";
     int fd = open(file.c_str(), O_CREAT | O_WRONLY | O_TRUNC, 0666);
     if (fd < 0) return;
+    const uint32_t magic = 0x4F4D4E49u;
+    const uint32_t version = 2;
+    uint32_t chunkCount = static_cast<uint32_t>(chunks.size());
+    write(fd, &magic, sizeof(magic)); write(fd, &version, sizeof(version));
+    write(fd, &gWorldSeed, sizeof(gWorldSeed)); write(fd, &chunkCount, sizeof(chunkCount));
     std::shared_lock lk(chunkMtx);
-    uint32_t chunkCount = chunks.size();
-    write(fd, &chunkCount, sizeof(chunkCount));
     for (auto& [k, ch] : chunks) {
-        write(fd, &ch->cx, sizeof(ch->cx));
-        write(fd, &ch->cz, sizeof(ch->cz));
+        write(fd, &ch->cx, sizeof(ch->cx)); write(fd, &ch->cz, sizeof(ch->cz));
         write(fd, ch->blocks.data(), ch->blocks.size());
     }
     close(fd);
@@ -567,25 +596,27 @@ void World::saveWorld(const std::string& path) {
 }
 
 void World::loadWorld(const std::string& path) {
+    if (path.empty()) return;
     std::string file = path + "/world_save.dat";
     int fd = open(file.c_str(), O_RDONLY);
     if (fd < 0) return;
-    uint32_t chunkCount = 0;
-    if (read(fd, &chunkCount, sizeof(chunkCount)) <= 0) { close(fd); return; }
-    std::unique_lock lk(chunkMtx);
-    chunks.clear();
-    for (uint32_t i = 0; i < chunkCount; ++i) {
-        int cx = 0, cz = 0;
-        read(fd, &cx, sizeof(cx));
-        read(fd, &cz, sizeof(cz));
-        auto ch = std::make_shared<Chunk>(cx, cz);
-        read(fd, ch->blocks.data(), ch->blocks.size());
-        ch->generated = true;
-        ch->dirty = true;
-        chunks[key(cx, cz)] = ch;
+    uint32_t magic = 0, version = 0, chunkCount = 0;
+    if (read(fd, &magic, sizeof(magic)) != sizeof(magic)) { close(fd); return; }
+    if (magic == 0x4F4D4E49u) {
+        if (read(fd, &version, sizeof(version)) != sizeof(version) || version < 2 ||
+            read(fd, &gWorldSeed, sizeof(gWorldSeed)) != sizeof(gWorldSeed) ||
+            read(fd, &chunkCount, sizeof(chunkCount)) != sizeof(chunkCount)) { close(fd); return; }
+    } else chunkCount = magic;
+    if (chunkCount > 10000u) { close(fd); return; }
+    std::unique_lock lk(chunkMtx); chunks.clear();
+    for (uint32_t i=0; i<chunkCount; ++i) {
+        int cx=0, cz=0;
+        if (read(fd,&cx,sizeof(cx)) != sizeof(cx) || read(fd,&cz,sizeof(cz)) != sizeof(cz)) break;
+        auto ch=std::make_shared<Chunk>(cx,cz);
+        if (read(fd,ch->blocks.data(),ch->blocks.size()) != static_cast<ssize_t>(ch->blocks.size())) break;
+        ch->generated=true; ch->dirty=true; chunks[key(cx,cz)]=ch;
     }
-    close(fd);
-    LOGI("Dunya yuklendi: %s (%u chunk)", file.c_str(), chunkCount);
+    close(fd); LOGI("Dunya yuklendi: %s (%u chunk)", file.c_str(), chunkCount);
 }
 
 void Renderer::generateProceduralAtlas() {
@@ -759,11 +790,17 @@ void main(){
 })";
 
 static GLuint compileShader(const char* vs, const char* fs) {
-    GLuint v = glCreateShader(GL_VERTEX_SHADER); glShaderSource(v,1,&vs,nullptr); glCompileShader(v);
-    GLuint f = glCreateShader(GL_FRAGMENT_SHADER); glShaderSource(f,1,&fs,nullptr); glCompileShader(f);
-    GLuint p = glCreateProgram(); glAttachShader(p,v); glAttachShader(p,f); glLinkProgram(p);
-    glDeleteShader(v); glDeleteShader(f);
-    return p;
+    auto compile=[](GLenum type,const char* src)->GLuint {
+        GLuint sh=glCreateShader(type); glShaderSource(sh,1,&src,nullptr); glCompileShader(sh);
+        GLint ok=GL_FALSE; glGetShaderiv(sh,GL_COMPILE_STATUS,&ok);
+        if(!ok){ char log[2048]={}; glGetShaderInfoLog(sh,sizeof(log),nullptr,log); LOGE("Shader compile failed: %s",log); }
+        return sh;
+    };
+    GLuint v=compile(GL_VERTEX_SHADER,vs), f=compile(GL_FRAGMENT_SHADER,fs);
+    GLuint prog=glCreateProgram(); glAttachShader(prog,v); glAttachShader(prog,f); glLinkProgram(prog);
+    GLint linked=GL_FALSE; glGetProgramiv(prog,GL_LINK_STATUS,&linked);
+    if(!linked){ char log[2048]={}; glGetProgramInfoLog(prog,sizeof(log),nullptr,log); LOGE("Program link failed: %s",log); glDeleteProgram(prog); prog=0; }
+    glDeleteShader(v); glDeleteShader(f); return prog;
 }
 
 void Renderer::init(int w, int h) {
@@ -922,14 +959,14 @@ void Renderer::drawMob(const Mat4& vp, const Entity& e) {
 }
 
 void Renderer::frame(World& world, Player& player, float time) {
-    if (player.inWater) {
-        glClearColor(0.12f, 0.35f, 0.65f, 1.0f);
-    } else {
-        glClearColor(0.48f, 0.72f, 0.95f, 1.0f);
-    }
+    float daylight=1.0f;
+    if(player.dayNightEnabled){ float sun=sinf((player.worldTime/24000.0f)*6.2831853f); daylight=clampf(0.18f+0.82f*std::max(0.0f,sun),0.18f,1.0f); }
+    if(player.inWater) glClearColor(0.06f*daylight,0.22f*daylight,0.48f*daylight,1.0f);
+    else glClearColor(0.20f+0.28f*daylight,0.28f+0.44f*daylight,0.38f+0.57f*daylight,1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    Mat4 proj = matPerspective(1.222f, (float)screenW / (float)screenH, 0.1f, 350.0f);
+    const float fovRad = player.fov * 0.01745329252f;
+    Mat4 proj = matPerspective(fovRad, (float)screenW / (float)screenH, 0.08f, 500.0f);
     Vec3 eye = player.pos + Vec3{0, player.eyeH, 0};
     Mat4 view = matLookAt(eye, eye + player.lookDir(), {0, 1, 0});
     Mat4 vp = proj * view;
@@ -943,8 +980,10 @@ void Renderer::frame(World& world, Player& player, float time) {
     glUniform1i(glGetUniformLocation(worldProg, "uTexture"), 0);
 
     int pcx = flr(player.pos.x / CS), pcz = flr(player.pos.z / CS);
-    for (int dx = -RD; dx <= RD; ++dx) {
-        for (int dz = -RD; dz <= RD; ++dz) {
+    world.streamAround(pcx, pcz, player.renderDistance, 2);
+    world.trimFarChunks(pcx, pcz, player.renderDistance + 2);
+    for (int dx = -player.renderDistance; dx <= player.renderDistance; ++dx) {
+        for (int dz = -player.renderDistance; dz <= player.renderDistance; ++dz) {
             auto ch = world.getChunk(pcx + dx, pcz + dz);
             if (ch && ch->generated) {
                 if (ch->dirty) ch->buildMesh(world);
@@ -986,6 +1025,11 @@ static bool checkCollision(const World& world, Vec3 pos) {
     return false;
 }
 
+static constexpr uint32_t SAVE_FOOTER=0x504C5952u;
+struct PlayerFooter { uint32_t magic; float x,y,z,yaw,pitch,worldTime; int32_t selected; uint8_t slots[INV_SIZE][3]; };
+static void savePlayerFooter(const GameState& gs){ if(gs.saveDirectory.empty())return; std::string f=gs.saveDirectory+"/world_save.dat"; int fd=open(f.c_str(),O_WRONLY|O_APPEND); if(fd<0)return; PlayerFooter p{}; p.magic=SAVE_FOOTER; p.x=gs.player.pos.x;p.y=gs.player.pos.y;p.z=gs.player.pos.z;p.yaw=gs.player.yaw;p.pitch=gs.player.pitch;p.worldTime=gs.player.worldTime;p.selected=gs.player.inv.selected; for(int i=0;i<INV_SIZE;++i){p.slots[i][0]=gs.player.inv.slots[i].id&255;p.slots[i][1]=(gs.player.inv.slots[i].id>>8)&255;p.slots[i][2]=gs.player.inv.slots[i].count;} write(fd,&p,sizeof(p)); close(fd); }
+static bool loadPlayerFooter(GameState& gs){ if(gs.saveDirectory.empty())return false; std::string f=gs.saveDirectory+"/world_save.dat"; int fd=open(f.c_str(),O_RDONLY); if(fd<0)return false; PlayerFooter p{}; if(lseek(fd,-(off_t)sizeof(p),SEEK_END)<0||read(fd,&p,sizeof(p))!=(ssize_t)sizeof(p)){close(fd);return false;} close(fd); if(p.magic!=SAVE_FOOTER)return false; gs.player.pos={p.x,p.y,p.z};gs.player.yaw=p.yaw;gs.player.pitch=p.pitch;gs.player.worldTime=fmodf(p.worldTime,24000.0f);gs.player.inv.selected=std::clamp(p.selected,0,HOTBAR_SZ-1);for(int i=0;i<INV_SIZE;++i){uint16_t id=(uint16_t)p.slots[i][0]|((uint16_t)p.slots[i][1]<<8);gs.player.inv.slots[i]=ItemStack(id,p.slots[i][2]);}return true;}
+
 static GameState* gState = nullptr;
 
 extern "C" {
@@ -1016,13 +1060,9 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->world = std::make_unique<World>();
     gState->world->worldPath = gState->saveDirectory;
     gState->renderer.init(w, h);
-
-    for (int dx = -RD; dx <= RD; ++dx) {
-        for (int dz = -RD; dz <= RD; ++dz) {
-            auto ch = gState->world->getOrCreate(dx, dz);
-            if (!ch->generated) gState->world->generateChunk(*ch);
-        }
-    }
+    gState->world->loadWorld(gState->saveDirectory);
+    if (gState->world->chunks.empty()) gWorldSeed = 0x5EED1234u;
+    gState->world->streamAround(0, 0, 2, 64);
 
     int spawnY = gState->world->getHighestBlock(0, 0);
     gState->player.pos = {0.5f, static_cast<float>(spawnY) + 1.2f, 0.5f};
@@ -1036,7 +1076,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeInit(JNIEnv* env, jclass
     gState->player.inv.slots[6] = ItemStack(DIRT, 64);
     gState->player.inv.slots[7] = ItemStack(OAK_LOG, 64);
     gState->player.inv.slots[8] = ItemStack(TNT, 64);
-
+    loadPlayerFooter(*gState);
     gState->initialized = true;
     LOGI("Minecraft Motoru Baslatildi. Spawn: [0, %d, 0]", spawnY);
 }
@@ -1055,10 +1095,10 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     float sdt = clampf(dt, 0.0f, 0.033f);
     gs.time += sdt;
     gs.autoSaveTimer += sdt;
-
+    if(gs.player.dayNightEnabled) gs.player.worldTime=fmodf(gs.player.worldTime+sdt*20.0f,24000.0f);
     if (gs.autoSaveTimer >= 60.0f) {
-        if (gs.world) gs.world->saveWorld(gs.saveDirectory);
-        gs.autoSaveTimer = 0.0f;
+        if (gs.world) { gs.world->saveWorld(gs.saveDirectory); savePlayerFooter(gs); }
+        gs.autoSaveTimer=0.0f;
     }
 
     uint8_t bFeet = gs.world->blockAt(flr(gs.player.pos.x), flr(gs.player.pos.y), flr(gs.player.pos.z));
@@ -1223,7 +1263,7 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSelectSlot(JNIEnv*, jcla
 }
 
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSaveWorld(JNIEnv*, jclass) {
-    if (gState && gState->world) gState->world->saveWorld(gState->saveDirectory);
+    if(gState&&gState->world){gState->world->saveWorld(gState->saveDirectory);savePlayerFooter(*gState);}
 }
 
 JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetInventory(JNIEnv* env, jclass) {
@@ -1239,9 +1279,13 @@ JNIEXPORT jstring JNICALL Java_com_omni_craft_Engine_nativeGetInventory(JNIEnv* 
     return env->NewStringUTF(json.c_str());
 }
 
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetRenderDistance(JNIEnv*,jclass,jint d){if(gState)gState->player.renderDistance=std::clamp((int)d,3,RD);}
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetFov(JNIEnv*,jclass,jfloat f){if(gState)gState->player.fov=clampf(f,55.0f,95.0f);}
+JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeSetDayNight(JNIEnv*,jclass,jboolean e){if(gState)gState->player.dayNightEnabled=e;}
+
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeDestroy(JNIEnv*, jclass) {
     if (gState) {
-        if (gState->world) gState->world->saveWorld(gState->saveDirectory);
+        if (gState->world) { gState->world->saveWorld(gState->saveDirectory); savePlayerFooter(*gState); }
         gState->initialized = false;
         delete gState;
         gState = nullptr;
