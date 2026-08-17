@@ -38,74 +38,18 @@ object CraftLogger {
     private val logExecutor = Executors.newSingleThreadExecutor()
     private var logDir: File? = null
     private val timeFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS", Locale.getDefault())
-    private val fileFormat = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault())
 
     fun init(context: Context) {
         val docsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
-        logDir = File(docsDir, "Craft_Log").apply {
-            if (!exists()) mkdirs()
-        }
-
+        logDir = File(docsDir, "Craft_Log").apply { if (!exists()) mkdirs() }
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
-            handleFatalException(thread, throwable)
+            val sw = StringWriter()
+            throwable.printStackTrace(PrintWriter(sw))
+            Log.e(TAG, "Fatal Crash: $sw")
         }
-
-        info("CraftLogger baslatildi. Dizin: ${logDir?.absolutePath}")
     }
 
     fun getLogDirPath(): String = logDir?.absolutePath ?: ""
-
-    fun info(message: String) = logToFile("INFO", message)
-    fun error(message: String, throwable: Throwable? = null) {
-        val stackTrace = throwable?.let {
-            val sw = StringWriter()
-            it.printStackTrace(PrintWriter(sw))
-            "\n" + sw.toString()
-        } ?: ""
-        logToFile("ERROR", "$message$stackTrace")
-    }
-
-    private fun logToFile(level: String, message: String) {
-        val timestamp = timeFormat.format(Date())
-        val threadName = Thread.currentThread().name
-        val entry = "[$timestamp] [$level] [$threadName]: $message\n"
-        Log.println(if (level == "ERROR") Log.ERROR else Log.INFO, TAG, message)
-
-        logExecutor.execute {
-            try {
-                logDir?.let { dir ->
-                    val file = File(dir, "engine_runtime.log")
-                    FileWriter(file, true).use { it.write(entry) }
-                }
-            } catch (e: Exception) {
-                Log.e(TAG, "Log dosyasina yazilamadi: ${e.message}")
-            }
-        }
-    }
-
-    private fun handleFatalException(thread: Thread, throwable: Throwable) {
-        try {
-            val timestamp = fileFormat.format(Date())
-            val crashFile = File(logDir, "crash_jvm_$timestamp.log")
-            val sw = StringWriter()
-            throwable.printStackTrace(PrintWriter(sw))
-
-            val report = buildString {
-                appendLine("================ OMNI CRAFT CRASH RAPORU ================")
-                appendLine("Tarih: ${timeFormat.format(Date())}")
-                appendLine("Cihaz: ${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, API ${Build.VERSION.SDK_INT})")
-                appendLine("Hata Alan Thread: ${thread.name}")
-                appendLine("----------------- YIGIN IZI (STACKTRACE) -----------------")
-                appendLine(sw.toString())
-                appendLine("==========================================================")
-            }
-
-            FileWriter(crashFile, false).use { it.write(report) }
-            Log.e(TAG, "Kritik JVM cokmesi kaydedildi: ${crashFile.absolutePath}")
-        } catch (e: Exception) {
-            Log.e(TAG, "Cokme logu kaydedilemedi: ${e.message}")
-        }
-    }
 }
 
 object Engine {
@@ -118,10 +62,9 @@ object Engine {
     external fun nativeResize(w: Int, h: Int)
     external fun nativeFrame(dt: Float)
     external fun nativeIsInitialized(): Boolean
-    external fun nativeJoystick(x: Float, y: Float)
+    external fun nativeInput(x: Float, z: Float)
     external fun nativeCameraInput(dx: Float, dy: Float)
     external fun nativeTap(type: Int)
-    external fun nativeDropItem()
     external fun nativeJump()
     external fun nativeSneak(on: Boolean)
     external fun nativeSprint(on: Boolean)
@@ -135,7 +78,6 @@ object Engine {
 
         override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
             nativeSetupCrashHandler(CraftLogger.getLogDirPath())
-            CraftLogger.info("GLES 3.2 Render Yuzeyi Hazirlandi.")
         }
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
@@ -148,7 +90,7 @@ object Engine {
 
         override fun onDrawFrame(gl: GL10?) {
             val now = System.nanoTime()
-            val dt = ((now - lastTimeNs) / 1_000_000_000.0).toFloat().coerceIn(0.001f, 0.05f)
+            val dt = ((now - lastTimeNs) / 1_000_000_000.0).toFloat().coerceIn(0.001f, 0.04f)
             lastTimeNs = now
             nativeFrame(dt)
         }
@@ -161,6 +103,12 @@ class Activity : AndroidActivity() {
     private var lastTouchY = 0f
     private var isCamDragging = false
     private var camPointerId = -1
+
+    // D-Pad Hareket Durumu
+    private var moveFwd = false
+    private var moveBack = false
+    private var moveLeft = false
+    private var moveRight = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -182,17 +130,16 @@ class Activity : AndroidActivity() {
         }
         root.addView(glView)
 
-        setupMinecraftHUD(root)
+        setupMCPEHUD(root)
         setContentView(root)
-
         root.post { applyFullScreen() }
     }
 
     private fun applyFullScreen() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            window.insetsController?.let { controller ->
-                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
-                controller.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            window.insetsController?.let {
+                it.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                it.systemBarsBehavior = WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         } else {
             @Suppress("DEPRECATION")
@@ -207,153 +154,227 @@ class Activity : AndroidActivity() {
         }
     }
 
-    private fun setupMinecraftHUD(root: FrameLayout) {
+    private fun updateMovement() {
+        var x = 0f
+        var z = 0f
+        if (moveFwd) z += 1.0f
+        if (moveBack) z -= 1.0f
+        if (moveLeft) x -= 1.0f
+        if (moveRight) x += 1.0f
+        Engine.nativeInput(x, z)
+    }
+
+    private fun setupMCPEHUD(root: FrameLayout) {
         val hud = FrameLayout(this)
 
-        // 1. Vektörel Nişangah (Crosshair)
-        val crosshairV = View(this).apply {
-            background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(6, 36).apply { gravity = Gravity.CENTER }
+        // 1. Crosshair
+        val chV = View(this).apply {
+            background = GradientDrawable().apply { setColor(Color.argb(180, 255, 255, 255)) }
+            layoutParams = FrameLayout.LayoutParams(4, 30).apply { gravity = Gravity.CENTER }
         }
-        val crosshairH = View(this).apply {
-            background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
-            layoutParams = FrameLayout.LayoutParams(36, 6).apply { gravity = Gravity.CENTER }
+        val chH = View(this).apply {
+            background = GradientDrawable().apply { setColor(Color.argb(180, 255, 255, 255)) }
+            layoutParams = FrameLayout.LayoutParams(30, 4).apply { gravity = Gravity.CENTER }
         }
-        hud.addView(crosshairV)
-        hud.addView(crosshairH)
+        hud.addView(chV)
+        hud.addView(chH)
 
-        // 2. Sol Vektörel Joystick
-        val joyBase = View(this).apply {
-            background = GradientDrawable().apply {
-                shape = GradientDrawable.OVAL
-                setColor(Color.argb(70, 255, 255, 255))
-                setStroke(3, Color.argb(160, 200, 200, 200))
-            }
-            layoutParams = FrameLayout.LayoutParams(280, 280).apply {
+        // 2. Sol Klasik MCPE D-Pad
+        val dpad = RelativeLayout(this).apply {
+            layoutParams = FrameLayout.LayoutParams(320, 320).apply {
                 gravity = Gravity.BOTTOM or Gravity.START
-                setMargins(60, 0, 0, 60)
-            }
-        }
-        hud.addView(joyBase)
-
-        // 3. Minecraft 9'lu Vektörel Hotbar
-        val hotbarLayout = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            background = GradientDrawable().apply {
-                setColor(Color.argb(140, 20, 20, 20))
-                cornerRadius = 12f
-                setStroke(3, Color.argb(180, 150, 150, 150))
-            }
-            layoutParams = FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                110
-            ).apply {
-                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-                bottomMargin = 24
+                setMargins(40, 0, 0, 40)
             }
         }
 
-        for (i in 0 until 9) {
-            val slot = TextView(this).apply {
-                text = "${i + 1}"
-                textSize = 12f
+        fun createDpadBtn(text: String, rule: Int): Button {
+            return Button(this).apply {
+                setText(text)
+                textSize = 16f
                 setTextColor(Color.WHITE)
-                gravity = Gravity.CENTER
                 background = GradientDrawable().apply {
-                    setColor(if (i == 0) Color.argb(180, 100, 100, 100) else Color.argb(80, 50, 50, 50))
-                    cornerRadius = 8f
-                    setStroke(2, Color.argb(160, 200, 200, 200))
+                    setColor(Color.argb(120, 40, 40, 40))
+                    cornerRadius = 12f
+                    setStroke(2, Color.argb(150, 180, 180, 180))
                 }
-                layoutParams = LinearLayout.LayoutParams(96, 96).apply {
-                    setMargins(6, 6, 6, 6)
-                }
-                setOnClickListener {
-                    Engine.nativeSelectSlot(i)
-                    for (j in 0 until hotbarLayout.childCount) {
-                        (hotbarLayout.getChildAt(j).background as GradientDrawable).setColor(
-                            if (j == i) Color.argb(180, 100, 100, 100) else Color.argb(80, 50, 50, 50)
-                        )
+                layoutParams = RelativeLayout.LayoutParams(100, 100).apply {
+                    addRule(rule)
+                    if (rule == RelativeLayout.ALIGN_PARENT_TOP || rule == RelativeLayout.ALIGN_PARENT_BOTTOM) {
+                        addRule(RelativeLayout.CENTER_HORIZONTAL)
+                    } else {
+                        addRule(RelativeLayout.CENTER_VERTICAL)
                     }
                 }
             }
-            hotbarLayout.addView(slot)
         }
-        hud.addView(hotbarLayout)
 
-        // 4. Sağ Aksiyon Butonları
-        val rightPanel = LinearLayout(this).apply {
+        val btnUp = createDpadBtn("▲", RelativeLayout.ALIGN_PARENT_TOP).apply {
+            setOnTouchListener { _, e ->
+                moveFwd = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
+                updateMovement(); true
+            }
+        }
+        val btnDown = createDpadBtn("▼", RelativeLayout.ALIGN_PARENT_BOTTOM).apply {
+            setOnTouchListener { _, e ->
+                moveBack = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
+                updateMovement(); true
+            }
+        }
+        val btnLeft = createDpadBtn("◀", RelativeLayout.ALIGN_PARENT_START).apply {
+            setOnTouchListener { _, e ->
+                moveLeft = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
+                updateMovement(); true
+            }
+        }
+        val btnRight = createDpadBtn("▶", RelativeLayout.ALIGN_PARENT_END).apply {
+            setOnTouchListener { _, e ->
+                moveRight = (e.action == MotionEvent.ACTION_DOWN || e.action == MotionEvent.ACTION_MOVE)
+                updateMovement(); true
+            }
+        }
+
+        dpad.addView(btnUp)
+        dpad.addView(btnDown)
+        dpad.addView(btnLeft)
+        dpad.addView(btnRight)
+        hud.addView(dpad)
+
+        // 3. Sağ MCPE Zıplama & Eğilme ve Hızlı Eylem Butonları
+        val rightActionArea = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_HORIZONTAL
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
                 gravity = Gravity.BOTTOM or Gravity.END
-                setMargins(0, 0, 50, 50)
+                setMargins(0, 0, 40, 40)
             }
         }
 
-        fun createBtn(title: String, color: Int, onClick: () -> Unit, onTouchAction: ((Boolean) -> Unit)? = null): Button {
+        fun createRoundActionBtn(txt: String, size: Int, color: Int, onAction: () -> Unit): Button {
             return Button(this).apply {
-                text = title
-                textSize = 13f
+                text = txt
+                textSize = 12f
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
-                    cornerRadius = 20f
+                    shape = GradientDrawable.OVAL
                     setColor(color)
                     setStroke(2, Color.WHITE)
                 }
-                layoutParams = LinearLayout.LayoutParams(190, 95).apply {
-                    setMargins(0, 8, 0, 8)
+                layoutParams = LinearLayout.LayoutParams(size, size).apply {
+                    setMargins(8, 8, 8, 8)
                 }
-                if (onTouchAction != null) {
-                    setOnTouchListener { _, event ->
-                        when (event.actionMasked) {
-                            MotionEvent.ACTION_DOWN -> { onTouchAction(true); true }
-                            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { onTouchAction(false); true }
-                            else -> false
-                        }
-                    }
-                } else {
-                    setOnClickListener { onClick() }
-                }
+                setOnClickListener { onAction() }
             }
         }
 
-        rightPanel.addView(createBtn(getString(R.string.btn_break), Color.argb(180, 180, 40, 40), { Engine.nativeTap(0) }))
-        rightPanel.addView(createBtn(getString(R.string.btn_place), Color.argb(180, 40, 140, 40), { Engine.nativeTap(1) }))
-        rightPanel.addView(createBtn(getString(R.string.btn_drop), Color.argb(180, 180, 120, 20), { Engine.nativeDropItem() }))
-        rightPanel.addView(createBtn(getString(R.string.btn_jump), Color.argb(180, 30, 80, 180), { Engine.nativeJump() }))
-        hud.addView(rightPanel)
+        // Kır & Koy & Zıpla
+        rightActionArea.addView(createRoundActionBtn("KIR", 120, Color.argb(150, 180, 50, 50)) { Engine.nativeTap(0) })
+        rightActionArea.addView(createRoundActionBtn("KOY", 120, Color.argb(150, 50, 150, 50)) { Engine.nativeTap(1) })
+        rightActionArea.addView(createRoundActionBtn("⯅", 130, Color.argb(150, 70, 70, 70)) { Engine.nativeJump() })
+        hud.addView(rightActionArea)
 
-        // 5. Üst Duraklatma & Çanta Paneli
-        val topBar = LinearLayout(this).apply {
+        // 4. MCPE Orijinal 9'lu Hotbar ve "..." Envanter Butonu
+        val hotbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
             layoutParams = FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                gravity = Gravity.TOP or Gravity.END
-                setMargins(0, 30, 50, 0)
+                gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+                bottomMargin = 16
             }
         }
 
-        topBar.addView(createBtn(getString(R.string.btn_inv), Color.argb(160, 80, 80, 80), { showInventoryDialog() }))
-        topBar.addView(createBtn(getString(R.string.btn_pause), Color.argb(160, 120, 40, 40), { showPauseMenu() }))
-        hud.addView(topBar)
+        val hotbarSlots = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            background = GradientDrawable().apply {
+                setColor(Color.argb(160, 20, 20, 20))
+                cornerRadius = 8f
+                setStroke(2, Color.argb(180, 100, 100, 100))
+            }
+            setPadding(4, 4, 4, 4)
+        }
 
-        // Dokunmatik Kontrol Katmanı
+        val blockNames = arrayOf("Tahta", "Kırıktaş", "Elmas", "Masa", "Meşale", "6", "7", "8", "9")
+
+        for (i in 0 until 9) {
+            val slot = TextView(this).apply {
+                text = blockNames[i]
+                textSize = 9f
+                setTextColor(Color.WHITE)
+                gravity = Gravity.CENTER
+                background = GradientDrawable().apply {
+                    setColor(if (i == 0) Color.argb(180, 120, 120, 120) else Color.argb(60, 0, 0, 0))
+                    cornerRadius = 6f
+                    setStroke(if (i == 0) 3 else 1, if (i == 0) Color.WHITE else Color.GRAY)
+                }
+                layoutParams = LinearLayout.LayoutParams(90, 90).apply {
+                    setMargins(3, 3, 3, 3)
+                }
+                setOnClickListener {
+                    Engine.nativeSelectSlot(i)
+                    for (j in 0 until hotbarSlots.childCount) {
+                        (hotbarSlots.getChildAt(j).background as GradientDrawable).apply {
+                            setColor(if (j == i) Color.argb(180, 120, 120, 120) else Color.argb(60, 0, 0, 0))
+                            setStroke(if (j == i) 3 else 1, if (j == i) Color.WHITE else Color.GRAY)
+                        }
+                    }
+                }
+            }
+            hotbarSlots.addView(slot)
+        }
+        hotbarContainer.addView(hotbarSlots)
+
+        // MCPE "..." Envanter Butonu
+        val invBtn = Button(this).apply {
+            text = "•••"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                setColor(Color.argb(160, 35, 35, 35))
+                cornerRadius = 8f
+                setStroke(2, Color.WHITE)
+            }
+            layoutParams = LinearLayout.LayoutParams(90, 90).apply {
+                marginStart = 12
+            }
+            setOnClickListener { showInventoryDialog() }
+        }
+        hotbarContainer.addView(invBtn)
+        hud.addView(hotbarContainer)
+
+        // 5. Üst Duraklatma Butonu
+        val pauseBtn = Button(this).apply {
+            text = "II"
+            textSize = 14f
+            setTextColor(Color.WHITE)
+            background = GradientDrawable().apply {
+                setColor(Color.argb(140, 40, 40, 40))
+                cornerRadius = 8f
+                setStroke(1, Color.WHITE)
+            }
+            layoutParams = FrameLayout.LayoutParams(80, 80).apply {
+                gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+                topMargin = 20
+            }
+            setOnClickListener { showPauseMenu() }
+        }
+        hud.addView(pauseBtn)
+
+        // Dokunmatik Kamera Kaydırma Katmanı
         hud.setOnTouchListener { _, event ->
-            val pointerIndex = event.actionIndex
-            val pId = event.getPointerId(pointerIndex)
-            val x = event.getX(pointerIndex)
-            val y = event.getY(pointerIndex)
+            val pIdx = event.actionIndex
+            val pId = event.getPointerId(pIdx)
+            val x = event.getX(pIdx)
+            val y = event.getY(pIdx)
 
             when (event.actionMasked) {
                 MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                    if (x < root.width * 0.4f && y > root.height * 0.35f) {
-                        updateJoystick(x, y, joyBase)
-                    } else if (x > root.width * 0.35f && !isCamDragging) {
+                    // Sadece sağ ekranda boş alana basınca kamera sürükle
+                    if (x > root.width * 0.35f && !isCamDragging) {
                         isCamDragging = true
                         camPointerId = pId
                         lastTouchX = x
@@ -362,17 +383,14 @@ class Activity : AndroidActivity() {
                 }
                 MotionEvent.ACTION_MOVE -> {
                     for (i in 0 until event.pointerCount) {
-                        val currId = event.getPointerId(i)
-                        val px = event.getX(i)
-                        val py = event.getY(i)
-                        if (currId == camPointerId) {
+                        if (event.getPointerId(i) == camPointerId) {
+                            val px = event.getX(i)
+                            val py = event.getY(i)
                             val dx = (px - lastTouchX) * 0.22f
                             val dy = (py - lastTouchY) * 0.22f
                             Engine.nativeCameraInput(dx, -dy)
                             lastTouchX = px
                             lastTouchY = py
-                        } else if (px < root.width * 0.4f) {
-                            updateJoystick(px, py, joyBase)
                         }
                     }
                 }
@@ -380,14 +398,11 @@ class Activity : AndroidActivity() {
                     if (pId == camPointerId) {
                         isCamDragging = false
                         camPointerId = -1
-                    } else {
-                        Engine.nativeJoystick(0f, 0f)
                     }
                 }
                 MotionEvent.ACTION_CANCEL -> {
                     isCamDragging = false
                     camPointerId = -1
-                    Engine.nativeJoystick(0f, 0f)
                 }
             }
             true
@@ -396,34 +411,19 @@ class Activity : AndroidActivity() {
         root.addView(hud)
     }
 
-    private fun updateJoystick(touchX: Float, touchY: Float, base: View) {
-        val centerX = base.x + base.width / 2f
-        val centerY = base.y + base.height / 2f
-        var dx = touchX - centerX
-        var dy = touchY - centerY
-        val maxRadius = base.width / 2f
-        val dist = Math.hypot(dx.toDouble(), dy.toDouble()).toFloat()
-
-        if (dist > maxRadius) {
-            dx = (dx / dist) * maxRadius
-            dy = (dy / dist) * maxRadius
-        }
-        Engine.nativeJoystick(dx / maxRadius, dy / maxRadius)
-    }
-
     private fun showInventoryDialog() {
         val dialog = Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen)
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.argb(220, 20, 20, 20))
+            setBackgroundColor(Color.argb(230, 25, 25, 25))
         }
 
         val title = TextView(this).apply {
-            text = "ENVANTER (36 Slot)"
+            text = "ENVANTER"
             textSize = 20f
             setTextColor(Color.WHITE)
-            setPadding(0, 20, 0, 30)
+            setPadding(0, 20, 0, 20)
         }
         layout.addView(title)
 
@@ -449,9 +449,9 @@ class Activity : AndroidActivity() {
                         cornerRadius = 8f
                     }
                     layoutParams = GridLayout.LayoutParams().apply {
-                        width = 110
-                        height = 110
-                        setMargins(6, 6, 6, 6)
+                        width = 105
+                        height = 105
+                        setMargins(4, 4, 4, 4)
                     }
                 }
                 grid.addView(slotView)
@@ -463,7 +463,7 @@ class Activity : AndroidActivity() {
         val closeBtn = Button(this).apply {
             text = "Kapat"
             setOnClickListener { dialog.dismiss(); applyFullScreen() }
-            layoutParams = LinearLayout.LayoutParams(250, 100).apply { topMargin = 30 }
+            layoutParams = LinearLayout.LayoutParams(250, 90).apply { topMargin = 20 }
         }
         layout.addView(closeBtn)
 
@@ -476,29 +476,29 @@ class Activity : AndroidActivity() {
         val layout = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setBackgroundColor(Color.argb(230, 15, 15, 15))
+            setBackgroundColor(Color.argb(235, 20, 20, 20))
         }
 
         val title = TextView(this).apply {
-            text = "OMNI CRAFT - DURAKLATILDI"
+            text = "OYUN DURAKLATILDI"
             textSize = 22f
             setTextColor(Color.WHITE)
-            setPadding(0, 0, 0, 40)
+            setPadding(0, 0, 0, 30)
         }
         layout.addView(title)
 
         fun createMenuBtn(txt: String, onClick: () -> Unit): Button {
             return Button(this).apply {
                 text = txt
-                textSize = 16f
+                textSize = 15f
                 setTextColor(Color.WHITE)
                 background = GradientDrawable().apply {
-                    cornerRadius = 16f
-                    setColor(Color.argb(200, 50, 50, 50))
+                    cornerRadius = 12f
+                    setColor(Color.argb(200, 60, 60, 60))
                     setStroke(2, Color.WHITE)
                 }
-                layoutParams = LinearLayout.LayoutParams(400, 110).apply {
-                    setMargins(0, 12, 0, 12)
+                layoutParams = LinearLayout.LayoutParams(380, 100).apply {
+                    setMargins(0, 10, 0, 10)
                 }
                 setOnClickListener { onClick() }
             }

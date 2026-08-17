@@ -28,12 +28,13 @@
 
 static constexpr int CS        = 16;
 static constexpr int WH        = 128;
-static constexpr int RD        = 6;
+static constexpr int RD        = 5;   // Dengeli mobil render mesafesi
+static constexpr int SEA_LEVEL = 30;
 static constexpr float GRAVITY = -24.0f;
-static constexpr float JUMP_VEL= 8.2f;
-static constexpr float WALK_SPD= 4.317f;
+static constexpr float JUMP_VEL= 8.4f;
+static constexpr float WALK_SPD= 4.3f;
 static constexpr float SPRINT_SPD= 6.2f;
-static constexpr float SNEAK_SPD= 1.3f;
+static constexpr float SNEAK_SPD= 1.4f;
 static constexpr float REACH   = 5.5f;
 static constexpr int INV_SIZE  = 36;
 static constexpr int HOTBAR_SZ = 9;
@@ -170,6 +171,7 @@ public:
     void generateChunk(Chunk& c);
     uint8_t blockAt(int wx, int wy, int wz) const;
     void setBlock(int wx, int wy, int wz, uint8_t b);
+    int getHighestBlock(int wx, int wz) const;
     
     void saveWorld(const std::string& path);
     void loadWorld(const std::string& path);
@@ -182,7 +184,7 @@ public:
 };
 
 struct Player {
-    Vec3 pos{0, 75, 0}, vel{};
+    Vec3 pos{0, 50, 0}, vel{};
     float yaw = 0, pitch = 0;
     float eyeH = 1.62f;
     bool onGround = false;
@@ -215,7 +217,7 @@ struct GameState {
     Renderer renderer;
     std::atomic<bool> initialized{false};
     int screenW = 1920, screenH = 1080;
-    float joySX = 0, joySY = 0;
+    float inputX = 0, inputZ = 0;
     float time = 0;
     std::string saveDirectory = "";
 };
