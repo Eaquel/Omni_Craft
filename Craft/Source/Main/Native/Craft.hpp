@@ -17,6 +17,7 @@
 #include <shared_mutex>
 #include <atomic>
 #include <string>
+#include <sstream>
 #include <ctime>
 #include <csignal>
 #include <unistd.h>
@@ -26,18 +27,19 @@
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO,  LOG_TAG, __VA_ARGS__)
 #define LOGE(...) __android_log_print(ANDROID_LOG_ERROR, LOG_TAG, __VA_ARGS__)
 
-static constexpr int CS         = 16;
-static constexpr int WH         = 192;
-static constexpr int RD         = 8;
-static constexpr int SEA_LEVEL  = 32;
-static constexpr float GRAVITY  = -26.0f;
-static constexpr float JUMP_VEL = 8.8f;
-static constexpr float SWIM_VEL = 4.8f;
-static constexpr float WALK_SPD = 4.35f;
-static constexpr float REACH    = 5.5f;
-static constexpr int INV_SIZE   = 36;
-static constexpr int HOTBAR_SZ  = 9;
-static constexpr int MAX_STACK  = 64;
+static constexpr int CS        = 16;
+static constexpr int WH        = 128;
+static constexpr int RD        = 6;
+static constexpr int SEA_LEVEL = 32;
+static constexpr float GRAVITY = -24.0f;
+static constexpr float JUMP_VEL= 8.6f;
+static constexpr float SWIM_VEL= 4.5f;
+static constexpr float WALK_SPD= 4.317f;
+static constexpr float SPRINT_SPD= 6.2f;
+static constexpr float REACH   = 5.5f;
+static constexpr int INV_SIZE  = 36;
+static constexpr int HOTBAR_SZ = 9;
+static constexpr int MAX_STACK = 64;
 
 enum BlockID : uint8_t {
     AIR=0, GRASS, DIRT, STONE, COBBLESTONE, SAND, GRAVEL,
@@ -53,11 +55,24 @@ enum BlockID : uint8_t {
 enum ItemID : uint16_t {
     ITEM_NONE=0, ITEM_STICK=256, ITEM_RAW_PORK, ITEM_COOKED_PORK,
     ITEM_RAW_BEEF, ITEM_COOKED_BEEF, ITEM_RAW_MUTTON, ITEM_WOOL,
-    ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND, ITEM_APPLE
+    ITEM_COAL, ITEM_IRON_INGOT, ITEM_GOLD_INGOT, ITEM_DIAMOND,
+    ITEM_SWORD_IRON, ITEM_PICKAXE_IRON, ITEM_APPLE, ITEM_BREAD
 };
 
 enum EntityType : uint8_t {
     ENT_PIG=0, ENT_COW, ENT_SHEEP, ENT_ITEM_DROP
+};
+
+enum GameMode : uint8_t {
+    SURVIVAL=0, CREATIVE, ADVENTURE, SPECTATOR
+};
+
+struct GameRules {
+    bool keepInventory = false;
+    bool doDaylightCycle = true;
+    bool doMobSpawning = true;
+    bool cheatsEnabled = true;
+    int difficulty = 2;
 };
 
 struct BlockDef {
@@ -82,17 +97,14 @@ struct Vec3 {
     Vec3 norm() const { float l = len() + 1e-7f; return {x/l, y/l, z/l}; }
 };
 
-struct Vec3i {
-    int x, y, z;
-    bool operator==(const Vec3i& o) const { return x==o.x && y==o.y && z==o.z; }
-};
+struct Vec3i { int x, y, z; bool operator==(const Vec3i& o) const { return x==o.x && y==o.y && z==o.z; } };
 
 struct Mat4 {
     float m[16] = {0};
     static Mat4 identity() {
-        Mat4 res;
-        res.m[0] = res.m[5] = res.m[10] = res.m[15] = 1.0f;
-        return res;
+        Mat4 r;
+        r.m[0] = 1; r.m[5] = 1; r.m[10] = 1; r.m[15] = 1;
+        return r;
     }
     Mat4 operator*(const Mat4& b) const {
         Mat4 res;
@@ -143,14 +155,14 @@ struct Entity {
     uint32_t id = 0;
     EntityType type;
     Vec3 pos{}, vel{};
-    float yaw = 0.0f, pitch = 0.0f;
+    float yaw = 0.0f;
     float headYaw = 0.0f;
     float health = 10.0f;
     float maxHealth = 10.0f;
     float animTime = 0.0f;
-    float walkSpeed = 0.0f;
     float hurtTimer = 0.0f;
     float panicTimer = 0.0f;
+    float walkSpeed = 1.0f;
     uint16_t itemId = 0;
     bool alive = true;
 };
@@ -165,7 +177,6 @@ struct Chunk {
 
     GLuint vao = 0, vbo = 0;
     GLsizei vertexCount = 0;
-
     GLuint waterVao = 0, waterVbo = 0;
     GLsizei waterVertexCount = 0;
 
@@ -201,20 +212,21 @@ public:
     uint8_t blockAt(int wx, int wy, int wz) const;
     void setBlock(int wx, int wy, int wz, uint8_t b);
     int getHighestBlock(int wx, int wz) const;
+    void applyFallingBlockPhysics(int wx, int wy, int wz);
     
     void saveWorld(const std::string& path);
     void loadWorld(const std::string& path);
+    void streamAround(int centerCx, int centerCz, int radius, int budget = 4);
+    void trimFarChunks(int centerCx, int centerCz, int keepRadius);
+    
     void spawnMob(EntityType type, Vec3 pos);
     void spawnItemDrop(uint16_t itemId, Vec3 pos, Vec3 vel);
     void spawnBreakParticles(Vec3 pos, uint8_t blockId);
     void spawnSplashParticles(Vec3 pos);
     void spawnCritParticles(Vec3 pos);
     void spawnEatParticles(Vec3 pos, uint16_t itemId);
-    void applyFallingBlockPhysics(int wx, int wy, int wz);
     void updateEntities(float dt, const Vec3& playerPos);
     void updateParticles(float dt);
-    void streamAround(int centerCx, int centerCz, int radius, int budget);
-    void trimFarChunks(int centerCx, int centerCz, int keepRadius);
 
     struct RayHit { bool hit; Vec3i block, face; float dist; };
     RayHit raycast(Vec3 origin, Vec3 dir, float maxD) const;
@@ -225,29 +237,31 @@ struct Player {
     Vec3 pos{0.5f, 60.0f, 0.5f}, vel{};
     float yaw = 0.0f, pitch = 0.0f;
     float eyeH = 1.62f;
-    float health = 20.0f;
-    float hunger = 20.0f;
-    float oxygen = 20.0f;
-    float fallStartY = 0.0f;
-    float worldTime = 6000.0f;
-    float fov = 70.0f;
-    int renderDistance = 6;
-    bool dayNightEnabled = true;
     bool onGround = false;
     bool inWater = false;
     bool headSubmerged = false;
     bool jumpHolding = false;
     float coyoteTimer = 0.0f;
-    float attackCooldown = 0.0f;
-    float eatTimer = 0.0f;
-    bool isEating = false;
+    float fallStartY = 0.0f;
     Inventory inv;
+    GameMode gameMode = SURVIVAL;
 
+    float health = 20.0f;
+    float hunger = 20.0f;
+    float oxygen = 20.0f;
+    float worldTime = 6000.0f;
+    float fov = 70.0f;
+    int renderDistance = 6;
+    bool dayNightEnabled = true;
+
+    bool isEating = false;
+    float eatTimer = 0.0f;
     bool isBreaking = false;
     Vec3i breakingBlock{-999, -999, -999};
     Vec3i breakingFace{0, 1, 0};
     float breakProgress = 0.0f;
     float handSwingProgress = 0.0f;
+    float attackCooldown = 0.0f;
 
     Vec3 lookDir() const {
         float y2 = yaw * (3.14159265f / 180.0f), p = pitch * (3.14159265f / 180.0f);
@@ -264,7 +278,6 @@ public:
     GLuint crackProg = 0;
     GLuint atlasTex = 0;
     GLuint crackTex = 0;
-    GLuint itemsTex = 0;
     GLuint boxVAO = 0, boxVBO = 0;
     int screenW = 1920, screenH = 1080;
 
@@ -273,18 +286,19 @@ public:
     void frame(World& world, Player& player, float time);
     void generateTextures();
     void drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float yaw = 0, float pitch = 0, float roll = 0);
-    void drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw = 0, float pitch = 0, float roll = 0);
     void drawFlatItem(const Mat4& vp, Vec3 pos, uint16_t itemId, float yaw, float pitch);
-    void drawTargetedFaceCrack(const Mat4& vp, Vec3i pos, Vec3i face, float progress);
-    void drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, float time);
-    void drawMob(const Mat4& vp, const Entity& e, float daylight);
+    void drawTexturedCube(const Mat4& vp, Vec3 pos, Vec3 scale, uint8_t blockId, float yaw, float pitch, float roll);
     void drawFirstPersonHandAndItem(const Mat4& proj, const Player& player, float time);
+    void drawAtmosphere(const Mat4& vp, Vec3 playerPos, float worldTime, float time);
+    void drawTargetedFaceCrack(const Mat4& vp, Vec3i pos, Vec3i face, float progress);
+    void drawMob(const Mat4& vp, const Entity& e, float daylight);
 };
 
 struct GameState {
     std::unique_ptr<World> world;
     Player player;
     Renderer renderer;
+    GameRules rules;
     std::atomic<bool> initialized{false};
     int screenW = 1920, screenH = 1080;
     float inputX = 0, inputZ = 0;

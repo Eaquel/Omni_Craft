@@ -511,7 +511,6 @@ void World::setBlock(int wx, int wy, int wz, uint8_t b) {
     }
 }
 
-// 1. Özellik: Kum ve Çakıl Yerçekimi (Falling Block Physics)
 void World::applyFallingBlockPhysics(int wx, int wy, int wz) {
     uint8_t b = blockAt(wx, wy, wz);
     if (b == SAND || b == GRAVEL) {
@@ -581,7 +580,6 @@ void World::spawnSplashParticles(Vec3 pos) {
     }
 }
 
-// 7. Özellik: Kritik Vuruş Yıldız Parçacıkları (Critical Hit Sparks)
 void World::spawnCritParticles(Vec3 pos) {
     std::lock_guard lk(particleMtx);
     for (int i = 0; i < 10; ++i) {
@@ -596,7 +594,6 @@ void World::spawnCritParticles(Vec3 pos) {
     }
 }
 
-// 4. Özellik: Yemek Yeme Parçacıkları (Eating Crumbs)
 void World::spawnEatParticles(Vec3 pos, uint16_t itemId) {
     std::lock_guard lk(particleMtx);
     Vec3 col{0.8f, 0.3f, 0.3f};
@@ -659,11 +656,9 @@ void World::updateEntities(float dt, const Vec3& playerPos) {
         e.animTime += dt;
         if (e.hurtTimer > 0.0f) e.hurtTimer -= dt;
 
-        // 3. Özellik: Suda Eşya Kaldırma Kuvveti (Buoyancy)
         if (e.type == ENT_ITEM_DROP) {
             uint8_t bCurrent = blockAt(flr(e.pos.x), flr(e.pos.y), flr(e.pos.z));
             if (bCurrent == WATER) {
-                // Suda yukarı doğru yüzme
                 e.vel.y += 6.5f * dt;
                 e.vel.y = clampf(e.vel.y, -0.5f, 1.6f);
                 e.vel.x *= 0.82f;
@@ -693,7 +688,6 @@ void World::updateEntities(float dt, const Vec3& playerPos) {
                 e.pos.y = nextPos.y;
             }
 
-            // 2. Özellik: Mob Panik ve Kaçış AI (Flee on Hurt)
             if (e.panicTimer > 0.0f) {
                 e.panicTimer -= dt;
                 e.walkSpeed = 2.4f;
@@ -708,18 +702,15 @@ void World::updateEntities(float dt, const Vec3& playerPos) {
                 Vec3 diff = playerPos - e.pos;
                 float dist = diff.len();
 
-                // DÜZELTME: Kafa Açısı Kısıtlaması (Uzaylı gibi 360 dönme engeli)
                 if (dist < 8.0f) {
                     float targetYaw = atan2f(diff.x, -diff.z) * 57.29578f;
                     float diffAngle = fmodf(targetYaw - e.yaw + 540.0f, 360.0f) - 180.0f;
 
-                    // Gövdeyi yumuşakça oyuncuya çevir
                     if (fabsf(diffAngle) > 55.0f) {
                         float turnDir = diffAngle > 0 ? (diffAngle - 55.0f) : (diffAngle + 55.0f);
                         e.yaw += turnDir * dt * 3.5f;
                     }
 
-                    // Kafayı gövdeye göre maksimum +-55 derece sınırla
                     float headDiff = fmodf(targetYaw - e.yaw + 540.0f, 360.0f) - 180.0f;
                     headDiff = clampf(headDiff, -55.0f, 55.0f);
                     e.headYaw = e.yaw + headDiff;
@@ -910,33 +901,33 @@ void Renderer::generateTextures() {
                 int noise = ((x * 11 + y * 19 + t * 23) % 28) - 14;
                 uint32_t c = makeRGBA(140, 140, 140);
                 switch(t) {
-                    case 0: // Grass Top
+                    case 0:
                         c = makeRGBA(78 + noise, 185 + noise, 45 + noise);
                         break;
-                    case 1: // Grass Side
+                    case 1:
                         if (y < 7 + (x % 3)) c = makeRGBA(78 + noise, 185 + noise, 45 + noise);
                         else c = makeRGBA(118 + noise, 82 + noise, 52 + noise);
                         break;
-                    case 2: // Dirt
+                    case 2:
                         c = makeRGBA(118 + noise, 82 + noise, 52 + noise);
                         break;
-                    case 3: // Stone
+                    case 3:
                         c = makeRGBA(135 + noise, 135 + noise, 138 + noise);
                         break;
-                    case 4: // Cobblestone
+                    case 4:
                         noise = ((x * 13 ^ y * 23) % 40) - 20;
                         c = makeRGBA(115 + noise, 115 + noise, 115 + noise);
                         break;
-                    case 5: // Planks
+                    case 5:
                         c = makeRGBA(178 + (y%8==0?-30:noise), 138 + noise, 80 + noise);
                         break;
-                    case 6: // Oak Log Side
+                    case 6:
                         c = makeRGBA(108 + (x%8==0?-25:noise), 78 + noise, 48 + noise);
                         break;
-                    case 7: // Oak Log Top
+                    case 7:
                         c = makeRGBA(165 + noise, 128 + noise, 82 + noise);
                         break;
-                    case 8: // Leaves
+                    case 8:
                         if ((x%4==0 && y%4==0) && ((x+y)%5==0)) {
                             c = makeRGBA(0, 0, 0, 0);
                         } else {
@@ -944,25 +935,25 @@ void Renderer::generateTextures() {
                             c = makeRGBA(28 + leafVar, 155 + leafVar, 32 + leafVar, 255);
                         }
                         break;
-                    case 9: // Diamond Ore
+                    case 9:
                         if ((x>=8 && x<=23 && y>=8 && y<=23) && (noise > -3)) c = makeRGBA(42, 235, 235);
                         else c = makeRGBA(135 + noise, 135 + noise, 138 + noise);
                         break;
-                    case 10: // Coal Ore
+                    case 10:
                         if ((x>=8 && x<=23 && y>=8 && y<=23) && (noise > -3)) c = makeRGBA(28, 28, 28);
                         else c = makeRGBA(135 + noise, 135 + noise, 138 + noise);
                         break;
-                    case 11: // Bedrock
+                    case 11:
                         noise = ((x * 37 + y * 53) % 70) - 35;
                         c = makeRGBA(38 + noise, 38 + noise, 38 + noise);
                         break;
-                    case 12: // Crafting Table
+                    case 12:
                         c = makeRGBA(185 + noise, 140 + noise, 85 + noise);
                         break;
-                    case 13: // Sand
+                    case 13:
                         c = makeRGBA(232 + noise, 220 + noise, 158 + noise);
                         break;
-                    case 14: // Canlı Şeffaf Su
+                    case 14:
                         c = makeRGBA(24 + noise, 120 + noise, 235 + noise, 185);
                         break;
                     default:
@@ -982,7 +973,6 @@ void Renderer::generateTextures() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glGenerateMipmap(GL_TEXTURE_2D);
 
-    // 10 Kademeli Çatlak Dokusu
     std::vector<uint32_t> crackPixels(320 * 32, makeRGBA(0, 0, 0, 0));
     for (int stage = 0; stage < 10; ++stage) {
         int startX = stage * 32;
@@ -1241,7 +1231,6 @@ void Renderer::drawBox(const Mat4& vp, Vec3 pos, Vec3 scale, Vec3 color, float y
     glBindVertexArray(0);
 }
 
-// 9. Özellik: Minecraft 3B Düz Eşya Levha Çizimi (Flat Sprite Plate)
 void Renderer::drawFlatItem(const Mat4& vp, Vec3 pos, uint16_t itemId, float yaw, float pitch) {
     Vec3 itemColor{0.8f, 0.3f, 0.3f};
     if (itemId == ITEM_RAW_BEEF) itemColor = {0.68f, 0.18f, 0.18f};
@@ -1592,7 +1581,6 @@ void Renderer::frame(World& world, Player& player, float time) {
 
     drawAtmosphere(vp, player.pos, player.worldTime, time);
 
-    // 1. Opak Bloklar
     glUseProgram(worldProg);
     glUniformMatrix4fv(glGetUniformLocation(worldProg, "uMVP"), 1, GL_FALSE, vp.m);
     glUniform1f(glGetUniformLocation(worldProg, "uDaylight"), daylight);
@@ -1617,7 +1605,6 @@ void Renderer::frame(World& world, Player& player, float time) {
         }
     }
 
-    // 2. Canlı Su Yüzeyi
     glUseProgram(waterProg);
     glUniformMatrix4fv(glGetUniformLocation(waterProg, "uMVP"), 1, GL_FALSE, vp.m);
     glUniform1f(glGetUniformLocation(waterProg, "uTime"), time);
@@ -1637,24 +1624,20 @@ void Renderer::frame(World& world, Player& player, float time) {
         }
     }
 
-    // 3. Yüzey Kırılma Çatlağı
     if (player.isBreaking && player.breakProgress > 0.0f) {
         drawTargetedFaceCrack(vp, player.breakingBlock, player.breakingFace, player.breakProgress);
     }
 
-    // 4. Moblar ve Düşen Bloklar / Eşyalar
     std::lock_guard lk(world.entityMtx);
     for (const auto& e : world.entities) {
         if (e.alive) drawMob(vp, e, daylight);
     }
 
-    // 5. Parçacıklar
     std::lock_guard plk(world.particleMtx);
     for (const auto& p : world.particles) {
         drawBox(vp, p.pos, {p.size, p.size, p.size}, p.color);
     }
 
-    // 6. El ve Önizleme
     drawFirstPersonHandAndItem(proj, player, time);
 }
 
@@ -1760,7 +1743,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.attackCooldown -= sdt;
     }
 
-    // 4. Özellik: Yemek Yeme Mekaniği (Eating Update)
     if (gs.player.isEating) {
         gs.player.eatTimer += sdt;
         if (fmodf(gs.player.eatTimer, 0.15f) < sdt) {
@@ -1795,7 +1777,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
     gs.player.inWater = (bFeet == WATER || bHead == WATER);
     gs.player.headSubmerged = (bHead == WATER);
 
-    // 6. Özellik: Boğulma ve Oksijen Fiziği (Drowning & Oxygen)
     if (gs.player.headSubmerged) {
         gs.player.oxygen = std::max(0.0f, gs.player.oxygen - sdt * 2.5f);
         if (gs.player.oxygen <= 0.0f) {
@@ -1835,7 +1816,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.health = std::max(0.0f, gs.player.health - sdt * 0.60f);
     }
 
-    // Suda ve Karada Kesintisiz Zıplama & Batma Fiziği
     if (gs.player.onGround) gs.player.coyoteTimer = 0.14f;
     else gs.player.coyoteTimer = std::max(0.0f, gs.player.coyoteTimer - sdt);
 
@@ -1844,7 +1824,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         if (gs.player.jumpHolding) {
             gs.player.vel.y = SWIM_VEL;
         } else {
-            // Suda aşağı doğru doğal süzülme/batma
             gs.player.vel.y += GRAVITY * sdt * 0.20f;
             gs.player.vel.y *= 0.88f;
         }
@@ -1906,14 +1885,12 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.fallStartY = 0.0f;
     }
 
-    // Blok Kırma ve Canlılara Saldırı
     if (gs.player.isBreaking) {
         gs.player.handSwingProgress = 1.0f;
         Vec3 look = gs.player.lookDir();
 
         Entity* targetMob = gs.world->hitEntity(gs.player.pos + Vec3{0, gs.player.eyeH, 0}, look, 3.8f);
         if (targetMob && gs.player.attackCooldown <= 0.0f) {
-            // 7. Özellik: Kritik Vuruş (Düşerken vurunca ekstra hasar)
             bool isCrit = !gs.player.onGround && gs.player.vel.y < -0.5f && !gs.player.inWater;
             float damage = isCrit ? 6.5f : 4.0f;
 
@@ -1946,11 +1923,8 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
                     if (gs.player.breakProgress >= 1.0f) {
                         gs.world->setBlock(hit.block.x, hit.block.y, hit.block.z, AIR);
                         gs.world->spawnBreakParticles({hit.block.x+0.5f, hit.block.y+0.5f, hit.block.z+0.5f}, targetB);
-                        
-                        // 1. Özellik: Yerçekimi tetikle
                         gs.world->applyFallingBlockPhysics(hit.block.x, hit.block.y + 1, hit.block.z);
 
-                        // 8. Özellik: Yaprak Çürümesi (Leaf Decay)
                         if (targetB == OAK_LOG || targetB == BIRCH_LOG || targetB == SPRUCE_LOG) {
                             for (int lx = hit.block.x - 2; lx <= hit.block.x + 2; ++lx) {
                                 for (int ly = hit.block.y + 1; ly <= hit.block.y + 4; ++ly) {
@@ -1985,7 +1959,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeFrame(JNIEnv*, jclass, j
         gs.player.breakProgress = 0.0f;
     }
 
-    // Eşya Toplama
     {
         std::lock_guard lk(gs.world->entityMtx);
         for (auto& e : gs.world->entities) {
@@ -2029,7 +2002,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jcla
     if (!gState) return;
     ItemStack& held = gState->player.inv.active();
     
-    // Yemek Yeme Kontrolü (Food item)
     if (!held.empty() && (held.id == ITEM_RAW_PORK || held.id == ITEM_RAW_BEEF || held.id == ITEM_RAW_MUTTON || held.id == ITEM_APPLE)) {
         gState->player.isEating = true;
         gState->player.eatTimer = 0.0f;
@@ -2052,7 +2024,6 @@ JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeTapPlaceAt(JNIEnv*, jcla
     }
 }
 
-// 5. Özellik: Eşya Fırlatma (Throw Item Drop)
 JNIEXPORT void JNICALL Java_com_omni_craft_Engine_nativeDropHeldItem(JNIEnv*, jclass) {
     if (!gState) return;
     ItemStack& held = gState->player.inv.active();

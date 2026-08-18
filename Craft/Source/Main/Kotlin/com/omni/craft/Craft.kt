@@ -65,7 +65,6 @@ object CraftLogger {
     fun getLogDirPath(): String = logDir?.absolutePath ?: ""
 }
 
-// 10. Özellik: Canlı Eşya ve Et Görselleri Fabrikası (Icon Factory)
 object BlockIconFactory {
     private val iconCache = HashMap<Int, Bitmap>()
 
@@ -81,30 +80,29 @@ object BlockIconFactory {
         val quarter = size / 4f
         val eighth = size / 8f
 
-        // 2D Eşya İkonları Çizimi
         if (blockId >= 256) {
             when (blockId) {
-                258 -> { // Çiğ Domuz Eti (Raw Pork)
+                258 -> {
                     p.color = Color.rgb(225, 115, 115)
                     c.drawRoundRect(RectF(size * 0.2f, size * 0.25f, size * 0.8f, size * 0.75f), 12f, 12f, p)
                     p.color = Color.rgb(255, 210, 210)
                     c.drawCircle(size * 0.4f, size * 0.5f, size * 0.12f, p)
                 }
-                260 -> { // Çiğ Sığır Eti (Raw Beef)
+                260 -> {
                     p.color = Color.rgb(180, 45, 45)
                     c.drawRoundRect(RectF(size * 0.15f, size * 0.2f, size * 0.85f, size * 0.8f), 14f, 14f, p)
                     p.color = Color.WHITE
                     c.drawRect(RectF(size * 0.45f, size * 0.4f, size * 0.65f, size * 0.6f), p)
                 }
-                262 -> { // Çiğ Koyun Eti (Raw Mutton)
+                262 -> {
                     p.color = Color.rgb(205, 75, 75)
                     c.drawRoundRect(RectF(size * 0.2f, size * 0.25f, size * 0.8f, size * 0.75f), 10f, 10f, p)
                 }
-                263 -> { // Yün (Wool)
+                263 -> {
                     p.color = Color.rgb(240, 240, 240)
                     c.drawCircle(half, half, size * 0.35f, p)
                 }
-                268 -> { // Elma (Apple)
+                268 -> {
                     p.color = Color.rgb(225, 30, 30)
                     c.drawCircle(half, half + 4f, size * 0.32f, p)
                     p.color = Color.rgb(85, 165, 40)
@@ -119,7 +117,6 @@ object BlockIconFactory {
             return BitmapDrawable(context.resources, bmp)
         }
 
-        // 3D Blok İzometrik Çizimi
         val topCol: Int
         val sideLCol: Int
         val sideRCol: Int
@@ -203,7 +200,6 @@ object MinecraftIconFactory {
         return BitmapDrawable(context.resources, bmp)
     }
 
-    // 6. Özellik: 10 Baloncuklu Oksijen Göstergesi (Bubble Bar)
     fun createBubble(context: Context, full: Boolean, size: Int = 30): Drawable {
         val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
@@ -334,7 +330,6 @@ class Activity : AndroidActivity() {
 
     private fun dp(v: Float): Int = (v * resources.displayMetrics.density + 0.5f).toInt()
 
-    // 9. Özellik: Titreşim Geri Bildirimi (Haptic Feedback)
     private fun triggerHaptic(durationMs: Long = 30) {
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -467,7 +462,6 @@ class Activity : AndroidActivity() {
             layoutParams = FrameLayout.LayoutParams(-1, -1)
         }
 
-        // 1. Crosshair
         val chV = View(this).apply {
             background = GradientDrawable().apply { setColor(Color.argb(200, 255, 255, 255)) }
             layoutParams = FrameLayout.LayoutParams(dp(2.5f), dp(20f)).apply { gravity = Gravity.CENTER }
@@ -479,7 +473,6 @@ class Activity : AndroidActivity() {
         hud.addView(chV)
         hud.addView(chH)
 
-        // 2. Üst Durum Çubuğu (XYZ/FPS, 10 Kalp, 10 Açlık, 10 Oksijen, Pause Butonu)
         val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -554,7 +547,6 @@ class Activity : AndroidActivity() {
         topBar.addView(pauseBtn)
         hud.addView(topBar)
 
-        // 3. Joystick Görseli
         joyBaseView = View(this).apply {
             background = GradientDrawable().apply {
                 shape = GradientDrawable.OVAL
@@ -580,7 +572,6 @@ class Activity : AndroidActivity() {
         hud.addView(joyBaseView)
         hud.addView(joyKnobView)
 
-        // 4. Sağ Aksiyon Görselleri (KIR, ZIPLA, AT)
         val breakVisual = ImageView(this).apply {
             setImageDrawable(VectorIconFactory.createBreakIcon(this@Activity, dp(54f)))
             scaleType = ImageView.ScaleType.CENTER_INSIDE
@@ -625,7 +616,6 @@ class Activity : AndroidActivity() {
         hud.addView(jumpVisual)
         hud.addView(dropBtnVisual)
 
-        // 5. 9'lu Hotbar
         val hotbarContainer = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -690,7 +680,6 @@ class Activity : AndroidActivity() {
         hotbarContainer.addView(invBtn)
         hud.addView(hotbarContainer)
 
-        // 6. MASTER BİRLEŞİK ÇOKLU DOKUNMATİK KATMANI
         hud.setOnTouchListener { _, event ->
             val w = rootLayout.width.toFloat()
             val h = rootLayout.height.toFloat()
@@ -821,7 +810,6 @@ class Activity : AndroidActivity() {
                             }
                         }
 
-                        // Oksijen Göstergesi
                         oxygenBar?.let { ob ->
                             if (oxygen < 20.0f) {
                                 ob.visibility = View.VISIBLE
